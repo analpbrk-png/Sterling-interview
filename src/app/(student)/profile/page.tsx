@@ -63,7 +63,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           {!profile && <div className="mt-4"><Notice tone="warn">Save your personal details first.</Notice></div>}
           {profile && (
             <form action={saveResumeContext} className="mt-5 grid gap-4">
-              <Field label="Qualifications" hint="One per line."><Textarea name="qualifications" rows={3} defaultValue={ctx.qualifications.map((q) => [q.title, q.institution, q.year].filter(Boolean).join(", ")).join("\n")} /></Field>
+              <Field label="Qualifications" hint="One per line."><Textarea name="qualifications" rows={3} defaultValue={ctx.qualifications.map((q) => [q.title, q.institution && !q.title.includes(q.institution) ? q.institution : null, q.year && !q.title.includes(q.year) ? q.year : null].filter(Boolean).join(", ")).join("\n")} /></Field>
               <Field label="Experience" hint="One role per line."><Textarea name="experience" rows={3} defaultValue={ctx.experience.map((e) => [e.role, e.organisation].filter(Boolean).join(", ")).join("\n")} /></Field>
               <Field label="Projects" hint="One per line."><Textarea name="projects" rows={2} defaultValue={ctx.projects.join("\n")} /></Field>
               <Field label="Skills" hint="Comma separated."><Input name="skills" defaultValue={ctx.skills.join(", ")} /></Field>
