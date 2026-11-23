@@ -1,24 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
   effectsOf,
   formatClock,
   initialState,
   reduce,
   remainingSeconds,
-  resumeAt,
+  restoreBaseline,
+  restoreFromServer,
   type Effect,
   type MachineConfig,
   type MachineEvent,
   type MachineQuestion,
   type MachineState,
-  type QuestionOutcome,
+  type ServerQuestionState,
 } from "@/lib/interview/machine";
 import type { SessionConfig } from "@/lib/interview/config";
-import { ProgressQueue, type QueueStatus } from "@/lib/interview/progress-queue";
+import { ProgressQueue, type ProgressItem, type QueueStatus } from "@/lib/interview/progress-queue";
 import { useMediaStream, useMicLevel } from "@/hooks/use-media";
 import { playCue, useSpeech } from "@/hooks/use-speech";
 import { useClock } from "@/hooks/use-clock";
@@ -27,15 +26,23 @@ import { IntroScreen } from "./intro-steps";
 import { CameraPreview, MicMeter } from "./media-bits";
 import { Completion, type CompletionData } from "./completion";
 
-export interface RunnerQuestion extends MachineQuestion {
-  state: string;
+/** Server state of each question, with times already converted to the client clock. */
+export type RunnerQuestion = MachineQuestion & ServerQuestionState;
+
+/**
+ * Server calls for a real interview. progress() must throw only for retryable
+ * failures (network); a rejected transition resolves normally.
+ */
+export interface RunnerApi {
+  progress(item: ProgressItem): Promise<void>;
+  complete(): Promise<{ durationSeconds: number | null; attemptsLeft: number }>;
+  abandon(): Promise<void>;
 }
 
 export interface RunnerProps {
   brandName: string;
   session: {
     id: string;
-    applicationId: string | null;
     universityName: string;
     courseName: string;
     generationNotice: string | null;
@@ -43,27 +50,27 @@ export interface RunnerProps {
   };
   questions: RunnerQuestion[];
   identity: { fullName: string; studentId: string } | null;
-  /** Dev-only preview: no server calls are made. Never used for real sessions. */
-  previewMode?: boolean;
+  /** Missing only in the development preview: nothing is saved. */
+  api?: RunnerApi;
+  attemptsLeft?: number;
+  onExit: () => void;
+  onAgain?: () => void;
 }
 
 const TERMINAL = new Set(["completed", "timed_out"]);
 
-export function InterviewRunner({ brandName, session, questions, identity, previewMode = false }: RunnerProps) {
-  const router = useRouter();
-  const supabase = useMemo(() => (previewMode ? null : createClient()), [previewMode]);
+export function InterviewRunner({ brandName, session, questions, identity, api, attemptsLeft = 0, onExit, onAgain }: RunnerProps) {
+  const previewMode = !api;
   const config: MachineConfig = useMemo(
     () => ({ introSteps: session.config.introSteps, allowEarlySubmit: session.config.allowEarlySubmit, transitionMs: 1200 }),
     [session.config],
   );
 
-  // Resume after refresh: restart at the first unfinished question.
+  // Resume after refresh: continue from the server's timestamps (timers keep running).
   const firstOpen = questions.findIndex((q) => !TERMINAL.has(q.state));
   const alreadyStarted = questions.some((q) => q.state !== "pending");
-  const serverOutcomes: (QuestionOutcome | null)[] = questions.map((q) =>
-    TERMINAL.has(q.state) ? { state: q.state as QuestionOutcome["state"], method: "automatic" } : null,
-  );
-  const [needsResume, setNeedsResume] = useState(alreadyStarted && firstOpen >= 0);
+  const [needsResume, setNeedsResume] = useState(alreadyStarted);
+  const [attemptsAfter, setAttemptsAfter] = useState(attemptsLeft);
 
   const stateRef = useRef<MachineState>(initialState(questions));
   const [state, setState] = useState<MachineState>(stateRef.current);
@@ -81,17 +88,9 @@ export function InterviewRunner({ brandName, session, questions, identity, previ
   const queue = useMemo(
     () =>
       new ProgressQueue(async (item) => {
-        if (!supabase) return;
-        const { error } = await supabase.rpc("record_session_progress", {
-          p_session: session.id,
-          p_position: item.position,
-          p_state: item.state,
-          p_method: item.method ?? null,
-          p_client_ts: item.clientTs,
-        });
-        if (error) throw error;
+        if (api) await api.progress(item);
       }, setSyncStatus),
-    [supabase, session.id],
+    [api],
   );
 
   const releaseDevices = useCallback(() => {
@@ -110,17 +109,16 @@ export function InterviewRunner({ brandName, session, questions, identity, previ
       saved: previewMode ? "preview" : "saving",
     };
     setCompletion(base);
-    if (!supabase) return;
+    if (!api) return;
     try {
       await queue.drained();
-      const { data, error } = await supabase.rpc("complete_session", { p_session: session.id });
-      if (error) throw error;
-      const row = data as { duration_seconds: number | null } | null;
-      setCompletion({ ...base, durationSeconds: row?.duration_seconds ?? base.durationSeconds, saved: "saved" });
+      const res = await api.complete();
+      setAttemptsAfter(res.attemptsLeft);
+      setCompletion({ ...base, durationSeconds: res.durationSeconds ?? base.durationSeconds, saved: "saved" });
     } catch {
       setCompletion({ ...base, saved: "failed" });
     }
-  }, [previewMode, questions.length, queue, releaseDevices, session.id, supabase]);
+  }, [api, previewMode, questions.length, queue, releaseDevices]);
 
   const runEffects = useCallback(
     (effects: Effect[]) => {
@@ -177,9 +175,10 @@ export function InterviewRunner({ brandName, session, questions, identity, previ
 
   async function resume() {
     if (media.status !== "ready") await media.request();
-    startedAt.current = Date.now();
-    const s = resumeAt(questions, firstOpen, Date.now(), serverOutcomes);
-    const prev = stateRef.current;
+    const first = questions.find((q) => q.presentedAt != null)?.presentedAt;
+    startedAt.current = first ?? Date.now();
+    const s = restoreFromServer(questions, questions, Date.now());
+    const prev = restoreBaseline(questions);
     stateRef.current = s;
     setState(s);
     setNeedsResume(false);
@@ -187,10 +186,10 @@ export function InterviewRunner({ brandName, session, questions, identity, previ
   }
 
   async function endEarly() {
-    if (!window.confirm("End this practice interview now? You can start a new one at any time.")) return;
+    if (!window.confirm("End this interview now? Your adviser will see it as interrupted.")) return;
     releaseDevices();
-    if (supabase) await supabase.rpc("abandon_session", { p_session: session.id });
-    router.replace("/dashboard/");
+    await api?.abandon().catch(() => {});
+    onExit();
   }
 
   // ---------------------------------------------------------------------------
@@ -200,8 +199,8 @@ export function InterviewRunner({ brandName, session, questions, identity, previ
         data={completion}
         universityName={session.universityName}
         courseName={session.courseName}
-        onDone={() => { releaseDevices(); router.replace(previewMode ? "/" : "/dashboard/"); }}
-        onAgain={() => { releaseDevices(); router.replace(session.applicationId ? `/interview/new/?application=${session.applicationId}` : "/applications/"); }}
+        onDone={() => { releaseDevices(); onExit(); }}
+        onAgain={onAgain && attemptsAfter > 0 ? () => { releaseDevices(); onAgain(); } : undefined}
         onRetrySave={() => void finalize()}
       />
     );
@@ -212,7 +211,7 @@ export function InterviewRunner({ brandName, session, questions, identity, previ
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <h1 className="text-2xl font-semibold">Resume your interview</h1>
         <p className="mt-3 text-muted">
-          Your session was interrupted. You will continue from question {firstOpen + 1} of {questions.length}, starting again with its preparation time.
+          Your interview was interrupted. You will continue at question {Math.max(1, firstOpen + 1)} of {questions.length}. The timer kept running while you were away.
         </p>
         <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
           <Button onClick={resume}>Resume interview</Button>

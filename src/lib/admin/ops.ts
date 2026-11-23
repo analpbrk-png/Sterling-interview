@@ -5,7 +5,7 @@
  * student calling them gets nothing back.
  */
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/client";
+import { BASE_PATH, createClient } from "@/lib/supabase/client";
 import { fbool, fint, fopt, fstr } from "@/lib/use-action";
 import { parseInterviewPdf } from "@/lib/questions/pdf-parse";
 import {
@@ -284,29 +284,122 @@ export async function saveSettings(form: FormData, adminId: string) {
   }
 }
 
-/** Deletes student documents older than the retention period (admins may delete, never read, files). */
+/** Deletes invitation documents (CVs) older than the retention period. */
 export async function runRetention(): Promise<string> {
   const { data: s } = await db().from("admin_settings").select("value").eq("key", "document_retention_days").maybeSingle();
   const days = Number(s?.value ?? 365);
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
-  const { data: old } = await db().from("student_documents").select("id, storage_path").lt("created_at", cutoff).limit(1000);
+  const { data: old } = await db().from("invitation_documents").select("id, storage_path").lt("created_at", cutoff).limit(1000);
   if (old?.length) {
     await db().storage.from("student-documents").remove(old.map((o) => o.storage_path));
-    await db().from("student_documents").delete().in("id", old.map((o) => o.id));
+    await db().from("invitation_documents").delete().in("id", old.map((o) => o.id));
   }
   return `Retention run complete: ${old?.length ?? 0} document(s) older than ${days} days deleted.`;
 }
 
-export async function setUserRole(id: string, role: "student" | "admin", adminId: string) {
-  if (id === adminId && role !== "admin") fail("You cannot remove your own admin role.");
-  const { error } = await db().from("users").update({ role }).eq("id", id);
-  if (error) fail("Could not update the role.");
+// ---------------------------------------------------------------------------
+// Interview invitations (link-based access for students)
+// ---------------------------------------------------------------------------
+/** Public link for a token. The token sits after "#", so it is never sent to GitHub Pages or other sites. */
+export function invitationLink(token: string) {
+  return `${window.location.origin}${BASE_PATH}/i/#${token}`;
 }
 
-export async function deleteStudent(id: string, adminId: string) {
-  if (id === adminId) fail("You cannot delete your own account here.");
-  const { data: docs } = await db().from("student_documents").select("storage_path").eq("user_id", id);
+export async function createInvitation(form: FormData, resume: File | null): Promise<{ id: string; token: string; resumeMessage: string | null }> {
+  const p = {
+    student_name: fstr(form, "student_name"),
+    student_ref: fstr(form, "student_ref"),
+    university_id: fstr(form, "university_id"),
+    course_id: fstr(form, "course_id"),
+    template_id: fopt(form, "template_id"),
+    question_count: fopt(form, "question_count"),
+    ai_question_count: fopt(form, "ai_question_count"),
+    prep_seconds: fopt(form, "prep_seconds"),
+    answer_seconds: fopt(form, "answer_seconds"),
+    submission_mode: fopt(form, "submission_mode"),
+    allow_early_submit: form.has("allow_early_submit_set") ? fbool(form, "allow_early_submit") : null,
+    previous_qualification: fopt(form, "previous_qualification"),
+    expires_in_days: fopt(form, "expires_in_days") ?? "14",
+    max_attempts: fopt(form, "max_attempts") ?? "1",
+  };
+  if (!p.student_name) fail("Enter the student's name.");
+  if (!p.student_ref) fail("Enter the student ID.");
+  if (!p.university_id || !p.course_id) fail("Choose the university and course.");
+  const { data, error } = await db().rpc("admin_create_invitation", { p });
+  if (error) fail(error.code === "23503" ? "That course does not belong to the chosen university." : `Could not create the interview: ${error.message}`);
+  const row = (data as Array<{ id: string; token: string }>)[0];
+  const resumeMessage = resume ? await attachResume(row.id, resume) : null;
+  return { ...row, resumeMessage };
+}
+
+/** Admin attaches a CV: stored privately, read in the browser, context extracted for the student to review. */
+export async function attachResume(invitationId: string, file: File): Promise<string> {
+  const { validateUpload } = await import("@/lib/documents/validate");
+  const { extractTextInBrowser } = await import("@/lib/documents/extract");
+  const { redactPersonalData } = await import("@/lib/ai/context");
+  const { basicResumeExtract } = await import("@/lib/ai/resume-basic");
+  const { callFunction } = await import("@/lib/functions");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const check = validateUpload("resume", file.name, bytes);
+  if (!check.ok) fail(check.error);
+  const path = `invitations/${invitationId}/resume-${crypto.randomUUID()}.${check.ok ? check.ext : "pdf"}`;
+  const { error: upErr } = await db().storage.from("student-documents").upload(path, bytes, { contentType: check.ok ? check.mime : undefined });
+  if (upErr) fail("CV upload failed.");
+  const { data: old } = await db().from("invitation_documents").select("id, storage_path").eq("invitation_id", invitationId).eq("kind", "resume");
+  if (old?.length) {
+    await db().from("invitation_documents").delete().in("id", old.map((o) => o.id));
+    await db().storage.from("student-documents").remove(old.map((o) => o.storage_path));
+  }
+  await db().from("invitation_documents").insert({
+    invitation_id: invitationId, kind: "resume", storage_path: path, file_name: check.ok ? check.safeName : file.name,
+    mime_type: check.ok ? check.mime : "application/pdf", size_bytes: bytes.length, uploaded_by: "admin",
+  });
+  const text = redactPersonalData(await extractTextInBrowser(file));
+  if (text.replace(/\s/g, "").length < 40) return "CV stored. No text could be read (scanned file?), so the student will be asked to type their background.";
+  const ai = await callFunction<{ available: boolean; context?: unknown }>("extract-resume", { text: text.slice(0, 20_000) });
+  const context = ai.data?.available && ai.data.context ? ai.data.context : basicResumeExtract(text);
+  await db().from("interview_invitations").update({ resume_context: context, resume_context_status: "draft", resume_extraction_mode: ai.data?.context ? "ai" : "basic" }).eq("id", invitationId);
+  return ai.data?.context ? "CV stored and read with AI. The student can review it before starting." : "CV stored and read (basic section detection). The student can review it before starting.";
+}
+
+export async function getInvitationLink(id: string): Promise<string> {
+  const { data, error } = await db().rpc("admin_invitation_token", { p_id: id });
+  if (error || !data) fail("Could not load the link. Regenerate it to get a new one.");
+  return invitationLink(data as string);
+}
+
+export async function revokeInvitation(id: string) {
+  const { error } = await db().from("interview_invitations").update({ revoked_at: new Date().toISOString() }).eq("id", id);
+  if (error) fail("Could not revoke the link.");
+}
+
+export async function regenerateInvitation(id: string): Promise<string> {
+  const { data, error } = await db().rpc("admin_regenerate_invitation", { p_id: id });
+  if (error || !data) fail("Could not regenerate the link.");
+  return invitationLink(data as string);
+}
+
+/** Gives the student one more attempt (and reactivates an expired link for 7 days). */
+export async function allowRetry(id: string) {
+  const { data: inv } = await db().from("interview_invitations").select("max_attempts, attempts_used, expires_at").eq("id", id).single();
+  if (!inv) fail("Invitation not found.");
+  const patch: Record<string, unknown> = { max_attempts: Math.min(20, Math.max(inv!.max_attempts, inv!.attempts_used + 1)) };
+  if (new Date(inv!.expires_at).getTime() < Date.now() + 86_400_000) patch.expires_at = new Date(Date.now() + 7 * 86_400_000).toISOString();
+  const { error } = await db().from("interview_invitations").update(patch).eq("id", id);
+  if (error) fail("Could not allow a retry.");
+}
+
+export async function deleteInvitation(id: string) {
+  const { data: docs } = await db().from("invitation_documents").select("storage_path").eq("invitation_id", id);
   if (docs?.length) await db().storage.from("student-documents").remove(docs.map((d) => d.storage_path));
-  const { error } = await db().rpc("admin_delete_user", { p_user: id });
-  if (error) fail("Could not delete the student.");
+  const { error } = await db().from("interview_invitations").delete().eq("id", id);
+  if (error) fail("Could not delete the interview.");
+}
+
+export async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    window.prompt("Copy this link:", text);
+  }
 }

@@ -23,11 +23,9 @@ export default function DevPreview() {
   ];
   return (
     <InterviewRunner
-      previewMode
       brandName={`${brand.name} (dev preview)`}
       session={{
         id: "preview",
-        applicationId: null,
         universityName: "Preview University",
         courseName: "MSc Business Analytics",
         generationNotice: "Development preview: questions are fixed samples and nothing is saved.",
@@ -42,7 +40,8 @@ export default function DevPreview() {
           includesSensitive: false,
         },
       }}
-      questions={texts.map((text, i) => ({ position: i, text, prepSeconds: prep, answerSeconds: answer, submissionMode: i === 1 ? "manual" : mode, state: "pending" }))}
+      questions={texts.map((text, i) => ({ position: i, text, prepSeconds: prep, answerSeconds: answer, submissionMode: i === 1 ? "manual" : mode, state: "pending", presentedAt: null, answerStartedAt: null }))}
+      onExit={() => window.location.reload()}
       identity={{ fullName: "Sample Student", studentId: "S0000000" }}
     />
   );

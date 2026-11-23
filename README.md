@@ -1,46 +1,47 @@
 # AI Interview Prep
 
-A practice platform for UK university credibility / CAS Shield-style interviews. Students build a profile, upload a CV, add the universities and courses they are applying to, and sit a timed mock interview: **one question at a time, realistic preparation and answer timers, no recording.**
+A practice platform for UK university credibility / CAS Shield-style interviews. **Students never sign in.** An admin creates an interview for a student, gets a unique secret link, and shares it by WhatsApp or email. The student opens the link, uploads a CV (optional), checks their background, practises the passport and name/ID introduction, and sits a timed mock interview: **one question at a time, realistic preparation and answer timers, no recording.** The admin watches progress live.
 
 > Independent practice tool. Not an official university interview, admissions decision or identity verification service.
 
 **Live site:** https://analpbrk-png.github.io/Sterling-interview/ (GitHub Pages, deployed by GitHub Actions on every push to `main`).
 
-## Architecture (GitHub-only hosting)
+## Workflow
+
+Admin login → New interview → unique link → share link → student opens link → interview → admin dashboard shows progress live → completed.
+
+## Architecture
 
 | Part | Where it runs | Notes |
 | --- | --- | --- |
-| Website (all pages) | **GitHub Pages**, static files built by **GitHub Actions** | Next.js static export. No server. |
-| Database, sign-in, private file storage | **Supabase** (backend) | Every table has row level security; files are in a private bucket. |
-| Building interview question sets, AI question generation, AI CV reading | **Supabase Edge Functions** | The Anthropic API key is a Supabase secret and never reaches the browser. |
-| Deploying migrations and Edge Functions | **GitHub Actions** (`.github/workflows/deploy-supabase.yml`) | Runs when `supabase/**` changes on `main`. |
+| Website: admin panel and student interview page | **GitHub Pages**, static files built by **GitHub Actions** | Next.js static export. No server. |
+| Database, admin login, private CV storage, live updates | **Supabase** (backend) | Row level security on every table; private bucket; Realtime for the dashboard. |
+| Everything a student does (open link, upload CV, start, progress, finish) | **Supabase Edge Function `invite`** | Validates the link token on every call. Students have no direct database access. |
+| AI question generation / CV reading | **Supabase Edge Functions** | The Anthropic key is a Supabase secret, never in the site. |
+| Deploying migrations and functions | **GitHub Actions** (`deploy-supabase.yml`) | Runs when `supabase/**` changes on `main` (needs secrets, see below). |
 
-No other website host (Vercel, Netlify, Firebase Hosting, Render…) is used.
+GitHub Pages cannot run backend code, keep secrets, validate links or hold interview state, so all of that is in Supabase. No other website host is used.
 
-### What GitHub Pages cannot do, and how it is handled
+### Interview links
 
-GitHub Pages only serves static files. It cannot run server code, keep secrets, or set custom HTTP headers. So:
+- Link format: `https://<user>.github.io/<repo>/i/#<token>`. The token is after `#` (the URL fragment), which browsers never send to GitHub Pages, analytics or other sites; pages also use `Referrer-Policy: no-referrer`. The token travels to the backend only inside a POST body.
+- Tokens are 32 random bytes (256 bits). The database stores only the **SHA-256 hash** for validation, plus an encrypted copy in **Supabase Vault** so admins can copy the link again. No database ID or student detail is ever used as a credential.
+- Each link reaches only its own interview. Links can expire (default 14 days), be revoked, be regenerated (the old link stops working immediately), and have an attempt limit (default 1). **Allow retry** adds an attempt and reopens an expired link for 7 days.
 
-- **Secrets:** the site contains only the Supabase URL and *anon* key, which are public by design. The service-role key and the AI key are never part of the site; the build fails if a secret-looking string appears in it.
-- **Access control:** pages check sign-in in the browser only to decide what to show. Real protection is in the database (row level security), storage policies and checked database functions: a student cannot read another student's rows or files, change their own role, or drive another student's session, whatever they do in the browser.
-- **Server work** (choosing questions from the admin-only bank, calling the AI) runs in Supabase Edge Functions that verify the caller's sign-in token first.
-- **File checks:** uploaded files are checked by content (magic bytes) in the browser; the storage bucket itself enforces the 10 MB limit and the allowed types (PDF, DOCX, JPG, PNG). A user who bypasses the browser could upload a mislabelled file into **their own** private folder only; files are never served publicly or opened by anyone else.
-- **CV reading** happens in the browser. Only redacted text (no emails, phone numbers, links or ID numbers) is sent to the `extract-resume` function, and only if AI is configured. Raw CV text is never stored. Passports are never read.
-- **Security headers:** GitHub Pages does not allow custom headers (such as `Permissions-Policy`). Camera and microphone are still requested only when the student presses the button, and the site is HTTPS-only.
-- **Admin pages** are static too; their writes succeed only for accounts whose database role is `admin`.
+### Progress and timing
 
-## What is in the box
+- Progress is saved on the server after every stage of every question (`invite_record_progress`). Transitions only move forward and are checked against the **server clock**: a student cannot skip preparation, cut an answer short, submit twice, or jump ahead.
+- After a refresh the interview resumes from the server timestamps; time that passed while the page was closed counts. If an automatic answer ran out meanwhile, that question is marked timed out and the next one starts.
+- Statuses: Not Started, In Progress, Completed, Interrupted (ended early or no activity for 20+ minutes), Expired (link expired or revoked before an active interview).
+- The dashboard and student record update automatically via Supabase Realtime (admins only; RLS applies to the feed) and re-check every 30 s for time-based statuses.
+- Results show question completion and activity only. Nothing is recorded, so there are no scores.
 
-| Area | Where |
-| --- | --- |
-| Student portal: sign-up, profile, CV/passport/course document uploads, CV context review, applications, history, delete-my-data | `src/app/(student)`, `src/lib/documents/client.ts` |
-| Interview: intro (welcome, camera/mic check, passport practice, name + student ID, pronunciation, declaration), timed questions, manual/automatic submission, TTS, completion | `src/app/interview`, `src/components/interview` |
-| Deterministic interview state machine + tests | `src/lib/interview/machine.ts`, `tests/machine.test.ts` |
-| Admin portal: question review, PDF import, AI generation, sequence preview, universities, courses + verified facts, templates, sessions, students, settings & retention | `src/app/admin`, `src/lib/admin/ops.ts` |
-| Logic shared by the site and Edge Functions (question selection, AI output validation, categories, flags) | `supabase/functions/_shared` (re-exported from `src/lib`) |
-| Edge Functions | `supabase/functions/create-session`, `extract-resume`, `generate-questions` |
-| Schema, RLS, storage policies, session and account functions | `supabase/migrations` |
-| 49 records extracted from the three reference PDFs | `data/question-import/cas-shield.json` → `supabase/seed.sql` |
+### Security summary
+
+- No student accounts; admin pages and all admin data require an admin login (database role `admin`). A self-registered non-admin sees nothing.
+- Students cannot read any table; their only access is the `invite` function, which checks the token first.
+- CVs are stored in a private bucket under `invitations/<id>/`, are type-checked by content on the server, and only admins can open them. Only redacted CV text (no emails, phone numbers, links, ID numbers) is used for AI reading. Passports are never uploaded.
+- Retention: Admin → Settings deletes CVs older than the configured number of days. Deleting an interview removes its CV and progress.
 
 ### Reference PDFs
 
@@ -58,14 +59,14 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 psql "$SUPABASE_DB_URL" -f supabase/seed.sql        # categories, default template, settings, 49 imported records
 psql "$SUPABASE_DB_URL" -f supabase/seed-demo.sql   # OPTIONAL demo universities/courses
-for fn in create-session extract-resume generate-questions; do supabase functions deploy $fn --use-api; done
+for fn in invite extract-resume generate-questions; do supabase functions deploy $fn --use-api; done
 supabase secrets set ALLOWED_ORIGINS="https://<user>.github.io,http://localhost:3210"
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-...   # optional; without it interviews use the approved bank only
 ```
 
-In Supabase → Authentication → URL Configuration set **Site URL** to `https://<user>.github.io/<repo>/` and add `https://<user>.github.io/<repo>/auth/callback/` (and `http://localhost:3210/auth/callback/` for development) to **Redirect URLs**.
+In Supabase → Authentication: turn **off** "Allow new users to sign up" (only admins have accounts) and set **Site URL** to `https://<user>.github.io/<repo>/`.
 
-Make yourself an admin after signing up:
+Create an admin: Authentication → Users → Add user (email + password, auto-confirm), then:
 
 ```sql
 update public.users set role = 'admin' where email = 'you@example.com';
@@ -86,26 +87,16 @@ cp .env.example .env.local   # Supabase URL + anon key
 npm run dev -- --port 3210
 ```
 
-## How the interview works
-
-- The full question sequence is built **before** the timer starts (Edge Function `create-session`): mandatory questions, a category round-robin of approved eligible questions (right country, right university, sensitive only if the template allows, never two from the same similarity group, avoiding the last 3 sessions), plus validated AI-personalised questions logged as pending review. If AI is unconfigured or fails, the student is told the session uses the bank only.
-- Timers use absolute deadlines, so background tabs and throttled timers stay accurate; after device sleep the student gets the full answer time instead of silently losing a question.
-- Every transition carries the question index; stale or double events are ignored. `record_session_progress` only moves forward and refuses to start question N+1 before N finishes.
-- Camera/microphone are requested only on a button press, shown live, and stopped on completion, Done, ending early and page hide. There is no recording code anywhere (enforced by `tests/no-recording.test.ts`).
-- Completion shows counts, university, course, duration and status — never scores.
-
 ## Testing
 
 ```bash
 npm test                              # unit tests: PDF import, state machine & timers, selection, AI validation, uploads, progress queue, no-recording guard
 npm run typecheck
 npm run db:verify                     # migrations + seed on a throwaway local Postgres; RLS, session and account-deletion checks
-node scripts/check-isolation.mjs      # live project: a second student cannot reach the first student's data
-node scripts/check-functions.mjs      # live project: Edge Function auth and ownership checks
-node scripts/check-static-ops.mjs     # live project: storage folder rules, self/admin account deletion
+node scripts/check-invite.mjs         # live project: link validation, isolation between links, server timing, revoke/regenerate/expiry/attempts
 ```
 
-The live-project scripts need `.env.local` (with the service-role key, local only) and `.env.test.local` (created by `node scripts/create-test-users.mjs`). Delete the test accounts before real use (Admin → Students).
+The live-project script needs `.env.local` and `.env.test.local` (created by `node scripts/create-test-users.mjs`, which makes a test admin). Remove that test admin before real use (Supabase → Authentication → Users).
 
 `/dev/interview-preview/?prep=5&answer=10` (development only) runs the interview UI without a database.
 

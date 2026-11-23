@@ -1,5 +1,6 @@
 /**
- * AI CV context extraction. The browser extracts and redacts the text first;
+ * AI CV context extraction for admins attaching a student's CV. The browser
+ * extracts and redacts the text first;
  * this function redacts again, calls the AI provider, and returns a short
  * draft that the student reviews. Nothing is stored here.
  */
@@ -10,7 +11,7 @@ import { redactPersonalData } from "../_shared/context.ts";
 Deno.serve(handle(async (req) => {
   const db = adminClient();
   const caller = await requireCaller(req, db);
-  if (!caller) return json(req, { error: "Please sign in again." }, 401);
+  if (!caller || caller.role !== "admin") return json(req, { error: "Administrators only." }, 403);
   const { text } = await req.json().catch(() => ({ text: "" }));
   if (typeof text !== "string" || text.replace(/\s/g, "").length < 40) return json(req, { error: "Not enough text to read." }, 400);
   const provider = getAIProvider();

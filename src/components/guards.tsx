@@ -1,7 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuth, type AppUser } from "./auth-provider";
+import { AuthProvider, useAuth, type AppUser } from "./auth-provider";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { Card, Loading } from "@/components/ui";
 
@@ -20,19 +20,34 @@ export function SetupNeeded() {
 }
 
 /**
- * Client-side gate for signed-in pages. It only decides what to render:
- * the actual protection is row level security in the database.
+ * Client-side gate for admin pages. It only decides what to render: the real
+ * protection is row level security and admin-only database functions.
  */
-export function RequireUser({ admin = false, children }: { admin?: boolean; children: (user: AppUser) => React.ReactNode }) {
-  const { user, loading } = useAuth();
+export function RequireAdmin({ children }: { children: (user: AppUser) => React.ReactNode }) {
+  return <AuthProvider><Gate>{children}</Gate></AuthProvider>;
+}
+
+function Gate({ children }: { children: (user: AppUser) => React.ReactNode }) {
+  const admin = true;
+  const { user, loading, signOut } = useAuth();
   const router = useRouter();
   const path = usePathname();
   useEffect(() => {
     if (loading || !isSupabaseConfigured) return;
     if (!user) router.replace(`/login/?next=${encodeURIComponent(path + window.location.search)}`);
-    else if (admin && user.role !== "admin") router.replace("/dashboard/?error=admin_only");
-  }, [admin, loading, path, router, user]);
+  }, [loading, path, router, user]);
   if (!isSupabaseConfigured) return <SetupNeeded />;
-  if (loading || !user || (admin && user.role !== "admin")) return <Loading />;
+  if (loading || !user) return <Loading />;
+  if (admin && user.role !== "admin") {
+    return (
+      <div className="max-w-md mx-auto p-6">
+        <Card className="p-6">
+          <h1 className="text-lg font-semibold">Administrators only</h1>
+          <p className="mt-2 text-sm text-muted">This account does not have admin access. Students do not need to sign in: use the interview link from your adviser.</p>
+          <button type="button" className="mt-4 text-sm font-medium text-accent" onClick={() => void signOut()}>Sign out</button>
+        </Card>
+      </div>
+    );
+  }
   return <>{children(user)}</>;
 }

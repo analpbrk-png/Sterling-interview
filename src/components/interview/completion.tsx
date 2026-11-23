@@ -15,7 +15,7 @@ export function Completion({ data, universityName, courseName, onDone, onAgain, 
   universityName: string;
   courseName: string;
   onDone: () => void;
-  onAgain: () => void;
+  onAgain?: () => void;
   onRetrySave: () => void;
 }) {
   const rows: Array<[string, string]> = [
@@ -39,7 +39,7 @@ export function Completion({ data, universityName, courseName, onDone, onAgain, 
             </div>
           ))}
         </dl>
-        <p className="mt-4 text-xs text-muted">Your camera and microphone have been turned off. Nothing was recorded.</p>
+        <p className="mt-4 text-xs text-muted">Your camera and microphone have been turned off. Nothing was recorded. Your adviser can see that you completed the interview.</p>
         {data.saved === "saving" && <p className="mt-3 text-xs text-muted">Saving session summary…</p>}
         {data.saved === "preview" && <div className="mt-4"><Notice tone="warn">Preview mode: nothing was saved.</Notice></div>}
         {data.saved === "failed" && (
@@ -50,7 +50,7 @@ export function Completion({ data, universityName, courseName, onDone, onAgain, 
         )}
         <div className="mt-7 flex flex-col sm:flex-row gap-3 justify-center">
           <Button onClick={onDone}>Done</Button>
-          <Button variant="secondary" onClick={onAgain}>Practice Again</Button>
+          {onAgain && <Button variant="secondary" onClick={onAgain}>Practice Again</Button>}
         </div>
       </Card>
     </div>

@@ -11,8 +11,8 @@ export function formatDuration(seconds: number | null | undefined) {
 }
 
 export const STATUS_LABEL: Record<string, string> = {
-  ready: "Not started",
+  ready: "Prepared (not started)",
   in_progress: "In progress",
   completed: "Completed",
-  abandoned: "Ended early",
+  abandoned: "Interrupted",
 };

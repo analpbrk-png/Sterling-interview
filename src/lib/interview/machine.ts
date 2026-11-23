@@ -209,3 +209,57 @@ export function formatClock(totalSeconds: number): string {
   const s = totalSeconds % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
+
+// ---------------------------------------------------------------------------
+// Restoring after a refresh, from server timestamps (already converted to the
+// client clock). Strict: time that passed while the page was closed counts, so
+// a refresh can never reset or extend a timer.
+// ---------------------------------------------------------------------------
+export interface ServerQuestionState {
+  state: string;
+  presentedAt: number | null;
+  answerStartedAt: number | null;
+}
+
+export function restoreFromServer(
+  questions: MachineQuestion[],
+  server: ServerQuestionState[],
+  now: number,
+): MachineState {
+  const outcomes: (QuestionOutcome | null)[] = server.map((s) =>
+    s.state === "completed" || s.state === "timed_out" ? { state: s.state, method: "automatic" } : null,
+  );
+  const index = outcomes.findIndex((o) => !o);
+  if (index < 0) return { phase: "completed", completedAt: now, outcomes };
+  const q = questions[index];
+  const s = server[index];
+  if (s.state === "pending" || s.presentedAt == null) return startQuestion(questions, index, now, outcomes);
+  if (s.state === "awaiting_submit") {
+    return { phase: "question", index, stage: "awaiting_submit", stageStartedAt: now, stageEndsAt: null, outcomes };
+  }
+  const prepEnd = s.presentedAt + q.prepSeconds * 1000;
+  if (s.state === "preparing" && now < prepEnd) {
+    return { phase: "question", index, stage: "preparing", stageStartedAt: s.presentedAt, stageEndsAt: prepEnd, outcomes };
+  }
+  const answerStart = s.answerStartedAt ?? prepEnd;
+  const answerEnd = answerStart + q.answerSeconds * 1000;
+  if (now < answerEnd) {
+    return { phase: "question", index, stage: "answering", stageStartedAt: answerStart, stageEndsAt: answerEnd, outcomes };
+  }
+  if (q.submissionMode === "manual") {
+    return { phase: "question", index, stage: "awaiting_submit", stageStartedAt: answerEnd, stageEndsAt: null, outcomes };
+  }
+  // Automatic mode: the answer time ran out while away.
+  const next = outcomes.slice();
+  next[index] = { state: "timed_out", method: "automatic" };
+  return startQuestion(questions, index + 1, now, next);
+}
+
+/** The "before" state used to derive effects when restoring (nothing presented yet locally). */
+export function restoreBaseline(server: ServerQuestionState[]): MachineState {
+  return {
+    phase: "intro",
+    step: 0,
+    outcomes: server.map((s) => (s.state === "completed" || s.state === "timed_out" ? { state: s.state, method: "automatic" } : null)),
+  };
+}

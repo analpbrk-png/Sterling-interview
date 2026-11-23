@@ -44,7 +44,7 @@ export function IntroScreen(p: IntroProps) {
 
   if (p.step === "welcome") {
     return (
-      <Shell eyebrow={eyebrow} title="Welcome to your AI Mock Interview." footer={<Button onClick={p.onNext}>{nextLabel}</Button>}>
+      <Shell eyebrow={eyebrow} title="Before you begin" footer={<Button onClick={p.onNext}>{nextLabel}</Button>}>
         <div className="grid gap-5 text-[15px] text-ink-2 leading-relaxed">
           <div className="rounded-2xl border border-line bg-surface p-5">
             <p className="text-sm text-muted">Practising for</p>

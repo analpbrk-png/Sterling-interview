@@ -38,10 +38,11 @@
   ],
   "exclude": [
     "node_modules",
+    "out",
     "supabase/functions/*/index.ts",
     "supabase/functions/_shared/deps.ts",
     "supabase/functions/_shared/anthropic.ts",
     "supabase/functions/_shared/http.ts",
-    "out"
+    "supabase/functions/_shared/build-session.ts"
   ]
 }

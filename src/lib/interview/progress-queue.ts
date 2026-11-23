@@ -8,7 +8,7 @@ export interface ProgressItem {
   position: number;
   state: "preparing" | "answering" | "awaiting_submit" | "completed" | "timed_out";
   method?: "manual" | "automatic" | "early";
-  clientTs: string;
+  clientTs?: string;
 }
 
 export type QueueStatus = "idle" | "sending" | "retrying";

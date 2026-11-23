@@ -38,7 +38,7 @@ jobs:
       - name: Deploy Edge Functions
         if: steps.cfg.outputs.functions == 'yes'
         run: |
-          for fn in create-session extract-resume generate-questions; do
+          for fn in invite extract-resume generate-questions; do
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api
           done
       - name: Skipped

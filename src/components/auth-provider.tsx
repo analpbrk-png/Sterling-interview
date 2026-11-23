@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     await createClient().auth.signOut();
     setUser(null);
-    router.replace("/");
+    router.replace("/login/");
   }, [router]);
 
   return <Ctx.Provider value={{ user, loading, signOut, refresh: load }}>{children}</Ctx.Provider>;

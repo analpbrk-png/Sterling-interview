@@ -14,7 +14,7 @@ export function AppShell({ user, nav, children, wide = false }: {
     <div className="min-h-dvh flex flex-col">
       <header className="sticky top-0 z-20 border-b border-line bg-[color-mix(in_oklab,var(--bg)_88%,transparent)] backdrop-blur">
         <div className={`mx-auto ${wide ? "max-w-7xl" : "max-w-5xl"} px-4 sm:px-6 h-16 flex items-center gap-4`}>
-          <BrandMark href="/dashboard/" compact />
+          <BrandMark href="/admin/" compact />
           <nav className="ml-auto flex items-center gap-1 overflow-x-auto no-scrollbar" aria-label="Main">
             {nav.map((n) => (
               <Link key={n.href} href={n.href} className="rounded-lg px-3 py-2 text-sm text-ink-2 hover:bg-surface-2 hover:text-ink whitespace-nowrap">

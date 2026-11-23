@@ -151,3 +151,39 @@ describe("interview machine", () => {
     expect(formatClock(150)).toBe("02:30");
   });
 });
+
+import { restoreBaseline, restoreFromServer } from "@/lib/interview/machine";
+
+describe("restore after refresh (server time is authoritative)", () => {
+  const q = qs(["automatic", "manual", "automatic"]);
+  const done = { state: "completed", presentedAt: 1, answerStartedAt: 2 };
+  const pending = { state: "pending", presentedAt: null, answerStartedAt: null };
+
+  it("keeps the remaining preparation time instead of restarting it", () => {
+    const s = restoreFromServer(q, [{ state: "preparing", presentedAt: T0, answerStartedAt: null }, pending, pending], T0 + 15_000);
+    expect(s).toMatchObject({ index: 0, stage: "preparing", stageEndsAt: T0 + 20_000 });
+    expect(remainingSeconds(s, T0 + 15_000)).toBe(5);
+  });
+
+  it("moves into answer time that already started while the page was closed", () => {
+    const s = restoreFromServer(q, [{ state: "preparing", presentedAt: T0, answerStartedAt: null }, pending, pending], T0 + 50_000);
+    expect(s).toMatchObject({ index: 0, stage: "answering", stageEndsAt: T0 + 80_000 });
+  });
+
+  it("automatic: an answer that ran out while away is timed out and the next question starts", () => {
+    const s = restoreFromServer(q, [{ state: "answering", presentedAt: T0, answerStartedAt: T0 + 20_000 }, pending, pending], T0 + 200_000);
+    expect(s).toMatchObject({ index: 1, stage: "preparing", stageStartedAt: T0 + 200_000 });
+    expect(s.outcomes[0]).toEqual({ state: "timed_out", method: "automatic" });
+    const effects = effectsOf(q, restoreBaseline([{ state: "answering", presentedAt: T0, answerStartedAt: T0 + 20_000 }, pending, pending]), s);
+    expect(effects.filter((e) => e.kind === "progress").map((e) => `${e.position}:${e.state}`)).toEqual(["0:timed_out", "1:preparing"]);
+  });
+
+  it("manual: an answer that ran out waits for Submit", () => {
+    const s = restoreFromServer(q, [done, { state: "answering", presentedAt: T0, answerStartedAt: T0 + 20_000 }, pending], T0 + 500_000);
+    expect(s).toMatchObject({ index: 1, stage: "awaiting_submit", stageEndsAt: null });
+  });
+
+  it("all finished means completed", () => {
+    expect(restoreFromServer(q, [done, done, done], T0).phase).toBe("completed");
+  });
+});

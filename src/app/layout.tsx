@@ -1,13 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import { brand } from "@/config/brand";
-import { AuthProvider } from "@/components/auth-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: brand.name, template: `%s · ${brand.name}` },
   description: brand.tagline,
   ...(process.env.NEXT_PUBLIC_BRAND_FAVICON_URL ? { icons: { icon: process.env.NEXT_PUBLIC_BRAND_FAVICON_URL } } : {}),
-  robots: { index: false },
+  robots: { index: false, follow: false },
+  // Interview links carry a secret in the URL fragment; never leak page URLs to other sites.
+  referrer: "no-referrer",
 };
 
 export const viewport: Viewport = {
@@ -23,7 +24,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-GB" style={{ ["--brand-accent" as string]: brand.accent }}>
-      <body className="min-h-dvh font-sans"><AuthProvider>{children}</AuthProvider></body>
+      <body className="min-h-dvh font-sans">{children}</body>
     </html>
   );
 }
