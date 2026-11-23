@@ -1,6 +1,5 @@
-import { Card, Checkbox, Field, Input, Select, Textarea } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/submit-button";
-import { saveTemplate } from "@/app/admin/actions";
+"use client";
+import { Button, Card, Checkbox, Field, Input, Select, Textarea } from "@/components/ui";
 
 export interface TemplateValues {
   id?: string;
@@ -24,9 +23,9 @@ export interface TemplateValues {
   tts_default: boolean;
 }
 
-export function TemplateForm({ t, universities }: { t: TemplateValues; universities: Array<{ id: string; name: string }> }) {
+export function TemplateForm({ t, universities, onSave, busy }: { t: TemplateValues; universities: Array<{ id: string; name: string }>; onSave: (form: FormData) => void; busy: boolean }) {
   return (
-    <form action={saveTemplate} className="grid gap-6 max-w-3xl">
+    <form onSubmit={(e) => { e.preventDefault(); onSave(new FormData(e.currentTarget)); }} className="grid gap-6 max-w-3xl">
       {t.id && <input type="hidden" name="id" value={t.id} />}
       <Card className="p-5 grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -70,7 +69,7 @@ export function TemplateForm({ t, universities }: { t: TemplateValues; universit
         <Checkbox name="declaration_enabled" label="Read-aloud declaration (practice only)" defaultChecked={t.declaration_enabled} />
         <Field label="Declaration text"><Textarea name="declaration_text" rows={3} defaultValue={t.declaration_text ?? ""} /></Field>
       </Card>
-      <div><SubmitButton>Save template</SubmitButton></div>
+      <div><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save template"}</Button></div>
     </form>
   );
 }

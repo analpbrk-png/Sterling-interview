@@ -1,14 +1,18 @@
-import { notFound } from "next/navigation";
+"use client";
 import { InterviewRunner } from "@/components/interview/interview-runner";
 import { brand } from "@/config/brand";
 
 /**
  * DEVELOPMENT ONLY: exercises the interview UI and timers without a database.
- * Returns 404 in production builds. Saves nothing.
+ * Renders nothing in production builds. Saves nothing.
  */
-export default async function DevPreview({ searchParams }: { searchParams: Promise<{ prep?: string; answer?: string; mode?: string }> }) {
-  if (process.env.NODE_ENV === "production") notFound();
-  const sp = await searchParams;
+import { useParam } from "@/lib/use-load";
+
+export default function DevPreview() {
+  const sp = { prep: useParam("prep") ?? undefined, answer: useParam("answer") ?? undefined, mode: useParam("mode") ?? undefined };
+  const ready = useParam("x") !== undefined;
+  if (process.env.NODE_ENV === "production") return <p className="p-6 text-sm text-muted">Not available.</p>;
+  if (!ready) return null;
   const prep = Number(sp.prep ?? 5);
   const answer = Number(sp.answer ?? 10);
   const mode = sp.mode === "manual" ? "manual" : "automatic";

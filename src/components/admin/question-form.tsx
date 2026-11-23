@@ -1,6 +1,5 @@
-import { Card, Checkbox, Field, Input, Select, Textarea } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/submit-button";
-import { saveQuestion } from "@/app/admin/actions";
+"use client";
+import { Button, Card, Checkbox, Field, Input, Select, Textarea } from "@/components/ui";
 
 export interface QuestionRow {
   id?: string;
@@ -22,13 +21,15 @@ export interface QuestionRow {
   review_notes: string | null;
 }
 
-export function QuestionForm({ q, categories, universities }: {
+export function QuestionForm({ q, categories, universities, onSave, busy }: {
   q: QuestionRow;
+  onSave: (form: FormData, intent: "approve" | "reject" | "") => void;
+  busy: boolean;
   categories: Array<{ id: string; name: string }>;
   universities: Array<{ id: string; name: string }>;
 }) {
   return (
-    <form action={saveQuestion} className="grid gap-6">
+    <form onSubmit={(e) => e.preventDefault()} className="grid gap-6">
       {q.id && <input type="hidden" name="id" value={q.id} />}
       <input type="hidden" name="review_status" value={q.review_status} />
       <Card className="p-5 grid gap-4">
@@ -84,9 +85,9 @@ export function QuestionForm({ q, categories, universities }: {
         <Field label="Review notes"><Textarea name="review_notes" rows={3} defaultValue={q.review_notes ?? ""} /></Field>
         {q.review_status === "approved" && <Checkbox name="is_active" label="Active (can appear in interviews)" defaultChecked={q.is_active} />}
         <div className="flex flex-wrap gap-2">
-          <SubmitButton name="intent" value="approve">Save and approve</SubmitButton>
-          <SubmitButton name="intent" value="" variant="secondary">Save</SubmitButton>
-          <SubmitButton name="intent" value="reject" variant="danger">Reject</SubmitButton>
+          <Button type="button" disabled={busy} onClick={(e) => onSave(new FormData(e.currentTarget.form!), "approve")}>Save and approve</Button>
+          <Button type="button" variant="secondary" disabled={busy} onClick={(e) => onSave(new FormData(e.currentTarget.form!), "")}>Save</Button>
+          <Button type="button" variant="danger" disabled={busy} onClick={(e) => onSave(new FormData(e.currentTarget.form!), "reject")}>Reject</Button>
         </div>
       </Card>
     </form>

@@ -1,17 +1,17 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Field, Input, Select } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/submit-button";
+import { Button, Field, Input, Select } from "@/components/ui";
 
-export function ApplicationForm({ action, universities, courses }: {
-  action: (form: FormData) => Promise<void>;
+export function ApplicationForm({ onSubmit, busy, universities, courses }: {
+  onSubmit: (form: FormData) => void;
+  busy: boolean;
   universities: Array<{ id: string; name: string }>;
   courses: Array<{ id: string; name: string; university_id: string }>;
 }) {
   const [uni, setUni] = useState("");
   const options = useMemo(() => courses.filter((c) => c.university_id === uni), [courses, uni]);
   return (
-    <form action={action} className="grid gap-4 sm:grid-cols-[1fr_1fr_160px_auto] sm:items-end">
+    <form onSubmit={(e) => { e.preventDefault(); onSubmit(new FormData(e.currentTarget)); }} className="grid gap-4 sm:grid-cols-[1fr_1fr_160px_auto] sm:items-end">
       <Field label="University">
         <Select name="university_id" required value={uni} onChange={(e) => setUni(e.target.value)}>
           <option value="" disabled>Choose…</option>
@@ -25,7 +25,7 @@ export function ApplicationForm({ action, universities, courses }: {
         </Select>
       </Field>
       <Field label="Intake (optional)"><Input name="intake" maxLength={40} placeholder="Sep 2027" /></Field>
-      <SubmitButton pendingText="Adding…">Add</SubmitButton>
+      <Button type="submit" disabled={busy}>{busy ? "Adding…" : "Add"}</Button>
     </form>
   );
 }

@@ -1,5 +1,6 @@
-import { ConfigGate } from "@/components/config-gate";
+"use client";
+import { RequireUser } from "@/components/guards";
 
 export default function InterviewLayout({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-dvh"><ConfigGate>{children}</ConfigGate></div>;
+  return <div className="min-h-dvh"><RequireUser>{() => children}</RequireUser></div>;
 }

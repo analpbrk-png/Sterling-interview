@@ -1,20 +1,19 @@
 import type { NextConfig } from "next";
 
-const securityHeaders = [
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "X-Frame-Options", value: "DENY" },
-  // Camera and microphone only for this origin; nothing else.
-  { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(), display-capture=()" },
-];
+/**
+ * Static export for GitHub Pages. NEXT_PUBLIC_BASE_PATH is the repository
+ * path ("/Sterling-interview") on github.io, or empty for a custom domain.
+ * There is no server: data access is protected by Supabase RLS, and secret
+ * work (AI, session building) runs in Supabase Edge Functions.
+ */
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 const nextConfig: NextConfig = {
+  output: "export",
+  basePath,
+  trailingSlash: true,
+  images: { unoptimized: true },
   turbopack: { root: import.meta.dirname },
-  serverExternalPackages: ["unpdf", "mammoth"],
-  experimental: { serverActions: { bodySizeLimit: "12mb" } },
-  async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
-  },
 };
 
 export default nextConfig;

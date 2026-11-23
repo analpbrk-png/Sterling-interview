@@ -1,0 +1,46 @@
+name: Deploy database and Edge Functions
+
+# Applies database migrations and deploys Supabase Edge Functions from GitHub
+# Actions when files under supabase/ change on main. Requires repository
+# secrets SUPABASE_ACCESS_TOKEN (and SUPABASE_DB_PASSWORD for migrations) and
+# the variable SUPABASE_PROJECT_REF. Steps are skipped if they are missing.
+on:
+  push:
+    branches: [main]
+    paths: ["supabase/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Check configuration
+        id: cfg
+        run: |
+          echo "functions=$([ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$PROJECT_REF" ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+          echo "migrations=$([ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$PROJECT_REF" ] && [ -n "$SUPABASE_DB_PASSWORD" ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+      - name: Apply migrations
+        if: steps.cfg.outputs.migrations == 'yes'
+        run: |
+          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --password "$SUPABASE_DB_PASSWORD"
+      - name: Deploy Edge Functions
+        if: steps.cfg.outputs.functions == 'yes'
+        run: |
+          for fn in create-session extract-resume generate-questions; do
+            supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api
+          done
+      - name: Skipped
+        if: steps.cfg.outputs.functions != 'yes'
+        run: echo "SUPABASE_ACCESS_TOKEN or SUPABASE_PROJECT_REF not set; nothing deployed."

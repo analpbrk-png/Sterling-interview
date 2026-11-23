@@ -124,3 +124,22 @@ do $$ begin
 end $$;
 reset role;
 select 'ALL RLS CHECKS PASSED' as result;
+
+-- Account deletion functions
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
+do $$ begin
+  begin
+    perform public.admin_delete_user('00000000-0000-0000-0000-00000000000a');
+    raise exception 'FAIL: student deleted another user';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL%' then raise; end if;
+  end;
+  perform public.delete_my_account();
+end $$;
+reset role;
+do $$ begin
+  if exists (select 1 from public.users where id = '00000000-0000-0000-0000-00000000000b') then raise exception 'FAIL: self delete'; end if;
+  if not exists (select 1 from public.users where id = '00000000-0000-0000-0000-00000000000a') then raise exception 'FAIL: wrong user deleted'; end if;
+end $$;
+select 'ACCOUNT DELETION CHECKS PASSED' as result;

@@ -106,11 +106,20 @@ export function EmptyState({ title, children, action }: { title: string; childre
   );
 }
 
-/** Shows ?saved / ?error feedback set by server actions. */
-export function FlashMessage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
-  const error = typeof searchParams.error === "string" ? searchParams.error : null;
-  const saved = typeof searchParams.saved === "string" ? searchParams.saved : null;
-  if (error) return <div className="mb-6"><Notice tone="danger">{error}</Notice></div>;
-  if (saved) return <div className="mb-6"><Notice tone="ok">{saved === "1" ? "Saved." : saved}</Notice></div>;
-  return null;
+export function FlashBar({ flash }: { flash: { tone: "ok" | "danger" | "warn"; text: string } | null }) {
+  if (!flash) return null;
+  return <div className="mb-6"><Notice tone={flash.tone}>{flash.text}</Notice></div>;
+}
+
+export function Loading({ label = "Loading…" }: { label?: string }) {
+  return <p className="py-10 text-center text-sm text-muted" role="status">{label}</p>;
+}
+
+export function LoadError({ error, onRetry }: { error: string; onRetry?: () => void }) {
+  return (
+    <div className="py-6">
+      <Notice tone="danger" title="Could not load this page">{error}</Notice>
+      {onRetry && <button type="button" onClick={onRetry} className="mt-3 text-sm font-medium text-accent">Try again</button>}
+    </div>
+  );
 }

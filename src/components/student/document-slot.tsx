@@ -1,24 +1,27 @@
 "use client";
 import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Badge, Notice, cx } from "@/components/ui";
+import { createClient } from "@/lib/supabase/client";
+import { buildResumeDraft, deleteDocument, openDocument, uploadDocument } from "@/lib/documents/client";
 
 export interface DocSummary {
   id: string;
   file_name: string;
   size_bytes: number;
   created_at: string;
+  storage_path: string;
 }
 
-export function DocumentSlot({ kind, title, description, accept, existing, multiple = false }: {
+export function DocumentSlot({ userId, kind, title, description, accept, existing, multiple = false, onChange }: {
+  userId: string;
   kind: "resume" | "passport" | "course_document";
   title: string;
   description: string;
   accept: string;
   existing: DocSummary[];
   multiple?: boolean;
+  onChange: () => void;
 }) {
-  const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
@@ -28,15 +31,20 @@ export function DocumentSlot({ kind, title, description, accept, existing, multi
     if (busy) return;
     setBusy(true);
     setMsg(null);
-    const body = new FormData();
-    body.set("kind", kind);
-    body.set("file", file);
     try {
-      const res = await fetch("/api/documents", { method: "POST", body });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Upload failed.");
-      setMsg({ tone: json.extraction?.mode === "basic" || json.extraction?.mode === null ? "warn" : "ok", text: json.extraction?.message ?? "Uploaded." });
-      router.refresh();
+      const { bytes, mime } = await uploadDocument(userId, kind, file);
+      if (kind === "resume") {
+        const draft = await buildResumeDraft(bytes, mime);
+        if (draft.context) {
+          await createClient().from("student_profiles")
+            .update({ resume_context: draft.context, resume_context_status: "draft", resume_extraction_mode: draft.mode })
+            .eq("user_id", userId);
+        }
+        setMsg({ tone: draft.mode === "ai" ? "ok" : "warn", text: draft.message });
+      } else {
+        setMsg({ tone: "ok", text: "Uploaded." });
+      }
+      onChange();
     } catch (e) {
       setMsg({ tone: "danger", text: e instanceof Error ? e.message : "Upload failed. Check your connection and try again." });
     } finally {
@@ -45,13 +53,18 @@ export function DocumentSlot({ kind, title, description, accept, existing, multi
     }
   }
 
-  async function remove(id: string) {
+  async function remove(d: DocSummary) {
     if (!window.confirm("Delete this document permanently?")) return;
     setBusy(true);
-    const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
-    setBusy(false);
-    setMsg(res.ok ? { tone: "ok", text: "Deleted." } : { tone: "danger", text: "Could not delete. Try again." });
-    router.refresh();
+    try {
+      await deleteDocument(d.id, d.storage_path);
+      setMsg({ tone: "ok", text: "Deleted." });
+      onChange();
+    } catch (e) {
+      setMsg({ tone: "danger", text: e instanceof Error ? e.message : "Could not delete." });
+    } finally {
+      setBusy(false);
+    }
   }
 
   const canAdd = multiple || existing.length === 0;
@@ -65,11 +78,9 @@ export function DocumentSlot({ kind, title, description, accept, existing, multi
         <div key={d.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface-2/60 px-3.5 py-2.5">
           <span className="min-w-0 flex-1 truncate text-sm text-ink">{d.file_name}</span>
           <Badge>{Math.max(1, Math.round(d.size_bytes / 1024))} KB</Badge>
-          <a href={`/api/documents/${d.id}`} target="_blank" rel="noreferrer" className="text-sm text-accent font-medium">View</a>
-          {!multiple && (
-            <button type="button" className="text-sm text-ink-2 hover:text-ink" onClick={() => input.current?.click()} disabled={busy}>Replace</button>
-          )}
-          <button type="button" className="text-sm text-danger" onClick={() => remove(d.id)} disabled={busy}>Delete</button>
+          <button type="button" className="text-sm text-accent font-medium" onClick={() => openDocument(d.storage_path).catch((e) => setMsg({ tone: "danger", text: e.message }))}>View</button>
+          {!multiple && <button type="button" className="text-sm text-ink-2 hover:text-ink" onClick={() => input.current?.click()} disabled={busy}>Replace</button>}
+          <button type="button" className="text-sm text-danger" onClick={() => remove(d)} disabled={busy}>Delete</button>
         </div>
       ))}
       <input ref={input} type="file" accept={accept} className="sr-only" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} aria-label={`Upload ${title}`} />

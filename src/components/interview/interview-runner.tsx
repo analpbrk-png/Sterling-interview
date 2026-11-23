@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/browser";
+import { createClient } from "@/lib/supabase/client";
 import {
   effectsOf,
   formatClock,
@@ -190,7 +190,7 @@ export function InterviewRunner({ brandName, session, questions, identity, previ
     if (!window.confirm("End this practice interview now? You can start a new one at any time.")) return;
     releaseDevices();
     if (supabase) await supabase.rpc("abandon_session", { p_session: session.id });
-    router.replace("/dashboard");
+    router.replace("/dashboard/");
   }
 
   // ---------------------------------------------------------------------------
@@ -200,8 +200,8 @@ export function InterviewRunner({ brandName, session, questions, identity, previ
         data={completion}
         universityName={session.universityName}
         courseName={session.courseName}
-        onDone={() => { releaseDevices(); router.replace(previewMode ? "/" : "/dashboard"); }}
-        onAgain={() => { releaseDevices(); router.replace(session.applicationId ? `/interview/new?application=${session.applicationId}` : "/applications"); }}
+        onDone={() => { releaseDevices(); router.replace(previewMode ? "/" : "/dashboard/"); }}
+        onAgain={() => { releaseDevices(); router.replace(session.applicationId ? `/interview/new/?application=${session.applicationId}` : "/applications/"); }}
         onRetrySave={() => void finalize()}
       />
     );

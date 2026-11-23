@@ -1,39 +1,38 @@
+"use client";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
-import { Card, PageHeader } from "@/components/ui";
-import { getAIProvider } from "@/lib/ai/provider";
+import { createClient } from "@/lib/supabase/client";
+import { useLoad } from "@/lib/use-load";
+import { useAiStatus } from "@/lib/admin/use-ai-status";
+import { Card, LoadError, Loading, PageHeader } from "@/components/ui";
 
-export const metadata = { title: "Admin" };
-
-export default async function AdminHome() {
-  await requireAdmin();
-  const supabase = await createClient();
-  const count = async (table: string, f?: (q: any) => any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-    let q = supabase.from(table).select("*", { count: "exact", head: true });
-    if (f) q = f(q);
-    return (await q).count ?? 0;
-  };
-  const [pending, active, students, sessions, completed, unis] = await Promise.all([
-    count("question_bank", (q) => q.eq("review_status", "pending_review")),
-    count("question_bank", (q) => q.eq("is_active", true)),
-    count("student_profiles"),
-    count("interview_sessions"),
-    count("interview_sessions", (q) => q.eq("status", "completed")),
-    count("universities"),
-  ]);
-  const ai = await getAIProvider();
+export default function AdminHome() {
+  const ai = useAiStatus();
+  const { data, error, loading, reload } = useLoad(async () => {
+    const supabase = createClient();
+    const count = async (table: string, filter?: [string, unknown]) => {
+      let q = supabase.from(table).select("*", { count: "exact", head: true });
+      if (filter) q = q.eq(filter[0], filter[1]);
+      return (await q).count ?? 0;
+    };
+    const [pending, active, students, sessions, completed, unis] = await Promise.all([
+      count("question_bank", ["review_status", "pending_review"]), count("question_bank", ["is_active", true]),
+      count("student_profiles"), count("interview_sessions"), count("interview_sessions", ["status", "completed"]), count("universities"),
+    ]);
+    return { pending, active, students, sessions, completed, unis };
+  }, []);
+  if (loading && !data) return <Loading />;
+  if (error || !data) return <LoadError error={error ?? "Not found"} onRetry={reload} />;
   const tiles = [
-    { label: "Questions awaiting review", value: pending, href: "/admin/questions?status=pending_review" },
-    { label: "Active questions", value: active, href: "/admin/questions?active=1" },
-    { label: "Universities", value: unis, href: "/admin/universities" },
-    { label: "Students", value: students, href: "/admin/students" },
-    { label: "Sessions", value: sessions, href: "/admin/sessions" },
-    { label: "Completed sessions", value: completed, href: "/admin/sessions?status=completed" },
+    { label: "Questions awaiting review", value: data.pending, href: "/admin/questions/?status=pending_review" },
+    { label: "Active questions", value: data.active, href: "/admin/questions/?active=1" },
+    { label: "Universities", value: data.unis, href: "/admin/universities/" },
+    { label: "Students", value: data.students, href: "/admin/students/" },
+    { label: "Sessions", value: data.sessions, href: "/admin/sessions/" },
+    { label: "Completed sessions", value: data.completed, href: "/admin/sessions/?status=completed" },
   ];
   return (
     <>
-      <PageHeader title="Admin overview" description={`AI provider: ${ai ? ai.name : "not configured (sessions use the approved question bank only)"}`} />
+      <PageHeader title="Admin overview" description={ai === null ? "Checking AI provider…" : `AI provider: ${ai.configured ? ai.provider : "not configured (sessions use the approved question bank only)"}`} />
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
         {tiles.map((t) => (
           <Link key={t.label} href={t.href}>
@@ -44,11 +43,11 @@ export default async function AdminHome() {
           </Link>
         ))}
       </div>
-      {active === 0 && (
+      {data.active === 0 && (
         <Card className="mt-8 p-5">
           <p className="font-medium">Next step: publish questions</p>
           <p className="text-sm text-muted mt-1">Students cannot start interviews until at least some questions are approved. Review the imported questions, then add universities and courses.</p>
-          <Link href="/admin/questions?status=pending_review" className="mt-3 inline-block text-sm font-medium text-accent">Review imported questions →</Link>
+          <Link href="/admin/questions/?status=pending_review" className="mt-3 inline-block text-sm font-medium text-accent">Review imported questions →</Link>
         </Card>
       )}
     </>

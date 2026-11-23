@@ -1,11 +1,13 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/browser";
+import { createClient, siteUrl } from "@/lib/supabase/client";
+import { useAuth } from "@/components/auth-provider";
 import { Button, Field, Input, Notice } from "@/components/ui";
 
 export function AuthForm({ mode, next }: { mode: "login" | "signup"; next: string }) {
   const router = useRouter();
+  const { refresh } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -25,20 +27,21 @@ export function AuthForm({ mode, next }: { mode: "login" | "signup"; next: strin
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/profile` },
+          options: { emailRedirectTo: siteUrl("/auth/callback/?next=/profile/") },
         });
         if (error) throw error;
         if (!data.session) {
           setInfo("Check your inbox to confirm your email, then sign in.");
           return;
         }
-        router.replace("/profile");
+        await refresh();
+        router.replace("/profile/");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.replace(next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
+        await refresh();
+        router.replace(next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard/");
       }
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
