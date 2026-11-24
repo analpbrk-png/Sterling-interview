@@ -33,11 +33,11 @@ export default function CoursePage() {
   const uni = c.universities as unknown as { id: string; name: string };
   return (
     <>
-      <PageHeader title={c.name} description={<Link href={`/admin/universities/view/?id=${uni.id}`} className="text-accent">← {uni.name}</Link>} />
+      <PageHeader title={c.name} description={<Link href={`/admin/universities/view/?id=${uni.id}`} className="inline-flex items-center gap-1 text-sm font-medium text-accent-fg hover:underline">← {uni.name}</Link>} />
       <FlashBar flash={flash ?? pageFlash} />
       <div className="mb-6"><Notice>The AI only uses course modules and details when they are marked <strong>verified</strong>. Unverified data is never presented to students as fact.</Notice></div>
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-5 h-fit">
+        <Card className="p-5 sm:p-6 h-fit">
           <form key={c.updated_at} onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(async () => { await saveCourse(f, user!.id); await reload(); return "Course saved."; }); }} className="grid gap-4">
             <input type="hidden" name="id" value={c.id} />
             <input type="hidden" name="university_id" value={uni.id} />
@@ -55,20 +55,20 @@ export default function CoursePage() {
         <div className="grid gap-6 content-start">
           <CourseDocuments courseId={c.id} officialUrl={c.official_url} onAddModules={(m) => setExtraModules(m)} />
           <Card className="divide-y divide-line">
-            <div className="p-4"><h2 className="font-semibold">Course facts</h2><p className="text-sm text-muted">Campus, facilities, assessment, teaching approach.</p></div>
+            <div className="p-4"><h2 className="font-display text-[17px] font-semibold">Course facts</h2><p className="text-sm text-muted">Campus, facilities, assessment, teaching approach.</p></div>
             {details.length ? details.map((d) => (
               <div key={d.id} className="p-4 flex gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex gap-2 mb-1"><Badge>{d.kind.replace("_", " ")}</Badge>{d.is_verified ? <Badge tone="ok">Verified</Badge> : <Badge tone="warn">Unverified</Badge>}</div>
                   <p className="text-sm text-ink-2 whitespace-pre-wrap">{d.content}</p>
-                  {d.source_url && <a href={d.source_url} className="text-xs text-accent break-all" target="_blank" rel="noreferrer">{d.source_url}</a>}
+                  {d.source_url && <a href={d.source_url} className="text-xs text-accent-fg break-all" target="_blank" rel="noreferrer">{d.source_url}</a>}
                 </div>
                 <Button variant="ghost" disabled={busy} onClick={() => window.confirm("Remove this detail?") && void run(async () => { await deleteCourseDetail(d.id); await reload(); return "Detail removed."; })}>Remove</Button>
               </div>
             )) : <p className="p-4 text-sm text-muted">No facts yet.</p>}
           </Card>
-          <Card className="p-5">
-            <h2 className="font-semibold mb-4">Add fact</h2>
+          <Card className="p-5 sm:p-6">
+            <h2 className="font-display text-[17px] font-semibold mb-4">Add fact</h2>
             <form onSubmit={(e) => { e.preventDefault(); const el = e.currentTarget; const f = new FormData(el); void run(async () => { await addCourseDetail(f); el.reset(); await reload(); return "Detail added."; }); }} className="grid gap-4">
               <input type="hidden" name="course_id" value={c.id} />
               <Field label="Type">

@@ -13,9 +13,9 @@ export default function ImportPdf() {
   const { run, busy, flash } = useAction();
   return (
     <>
-      <PageHeader title="Import questions from a PDF" description={<Link href="/admin/questions/" className="text-accent">← Question bank</Link>} />
+      <PageHeader title="Import questions from a PDF" description={<Link href="/admin/questions/" className="inline-flex items-center gap-1 text-sm font-medium text-accent-fg hover:underline">← Question bank</Link>} />
       <FlashBar flash={flash} />
-      <Card className="p-5 max-w-2xl">
+      <Card className="p-5 sm:p-6 max-w-2xl">
         <ul className="text-sm text-muted grid gap-1.5 mb-5">
           <li>• The PDF is read in your browser. Every page is checked for questions, identity instructions, pronunciation checks and declarations.</li>
           <li>• Original wording is kept unchanged with the file name and page number.</li>
@@ -34,7 +34,7 @@ export default function ImportPdf() {
             router.push("/admin/questions/?status=pending_review");
           });
         }} className="grid gap-4">
-          <Field label="PDF file" hint="Text-based PDF, up to 15 MB."><Input type="file" name="file" accept="application/pdf,.pdf" required className="file:mr-3 file:rounded-lg file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-accent pt-2" /></Field>
+          <Field label="PDF file" hint="Text-based PDF, up to 15 MB."><Input type="file" name="file" accept="application/pdf,.pdf" required className="file:mr-3 file:rounded-lg file:border-0 file:bg-accent-soft file:px-3 file:py-1.5 file:text-accent-fg pt-2" /></Field>
           <Field label="Country these questions apply to"><Input name="country" defaultValue="UK" /></Field>
           <Button type="submit" disabled={busy}>{busy ? "Reading every page…" : "Import for review"}</Button>
         </form>

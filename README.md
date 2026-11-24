@@ -6,6 +6,10 @@ A practice platform for UK university credibility / CAS Shield-style interviews.
 
 **Live site:** https://analpbrk-png.github.io/Sterling-interview/ (GitHub Pages, deployed by GitHub Actions on every push to `main`).
 
+## Design
+
+Sterling-branded UI built on the original **Sterling Study Abroad** logo (`public/brand/sterling-logo.webp`, shown unmodified). Palette comes from the logo's gold (cream `#fdf6c8` → deep gold `#c8961e`, accent `#fcd116`) with a near-black ink; tokens live in `src/app/globals.css` (light and dark, reduced-motion aware). Fonts: Outfit (display) and Poppins (text). The pale logo sits on an ink plate in light mode and directly on dark surfaces. Shared components are in `src/components/ui`; the admin uses a collapsible sidebar (`src/components/app-shell.tsx`) that becomes a drawer on phones.
+
 ## Workflow
 
 Admin login → New interview → unique link → share link → student opens link → interview → admin dashboard shows progress live → completed.

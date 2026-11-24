@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { brand, DISCLAIMER } from "@/config/brand";
-import { BrandMark } from "@/components/brand-mark";
-import { Badge, Button, Card, Field, Input, Loading, Notice, Textarea, cx } from "@/components/ui";
+import { SterlingLogo } from "@/components/brand-mark";
+import { ArrowRight, BookUser, CheckCircle2, ClipboardCheck, FileText, IdCard, Link2Off, Mic, Sparkles, UploadCloud, type LucideIcon } from "lucide-react";
+import { Badge, Button, Card, Field, IconTile, Input, Notice, Spinner, Textarea, cx } from "@/components/ui";
 import { InterviewRunner, type RunnerApi, type RunnerQuestion } from "@/components/interview/interview-runner";
 import { parseSessionConfig } from "@/lib/interview/config";
 import { sanitiseResumeContext, type ResumeContext } from "@/lib/ai/context";
@@ -12,13 +13,36 @@ type Step = "loading" | "invalid" | "welcome" | "cv" | "preparing" | "interview"
 
 const lines = (v: string) => v.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
-function Frame({ children }: { children: React.ReactNode }) {
+function Frame({ children, step }: { children: React.ReactNode; step?: 1 | 2 | 3 }) {
   return (
-    <div className="min-h-dvh flex flex-col">
-      <header className="px-4 sm:px-6 py-5 mx-auto w-full max-w-3xl"><BrandMark href="#" compact /></header>
+    <div className="min-h-dvh flex flex-col brand-backdrop pt-[env(safe-area-inset-top)]">
+      <header className="px-4 sm:px-6 py-4 sm:py-5 mx-auto w-full max-w-3xl flex items-center justify-between gap-4">
+        <SterlingLogo width={128} />
+        {step && (
+          <ol aria-label="Steps" className="flex items-center gap-1.5 text-xs text-muted">
+            {["Welcome", "Background", "Interview"].map((l, i) => (
+              <li key={l} className="flex items-center gap-1.5">
+                <span aria-current={step === i + 1 ? "step" : undefined} className={cx("grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold", step > i ? "bg-gold-gradient text-[#17150f]" : "bg-surface-3 text-muted")}>{i + 1}</span>
+                <span className={cx("hidden sm:inline", step === i + 1 && "text-ink font-medium")}>{l}</span>
+                {i < 2 && <span aria-hidden className="mx-1 h-px w-4 bg-line-strong" />}
+              </li>
+            ))}
+          </ol>
+        )}
+      </header>
       <main className="flex-1 px-4 sm:px-6 pb-12 mx-auto w-full max-w-3xl">{children}</main>
-      <footer className="py-5 text-center text-xs text-muted px-4">{DISCLAIMER}</footer>
+      <footer className="py-5 text-center text-xs text-muted px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">{DISCLAIMER}</footer>
     </div>
+  );
+}
+
+function StatusCard({ icon: Icon, tone, title, children }: { icon: LucideIcon; tone: "accent" | "danger" | "ok" | "warn"; title: string; children?: React.ReactNode }) {
+  return (
+    <Card className="p-7 sm:p-9 max-w-lg mx-auto mt-8 sm:mt-14 text-center animate-rise">
+      <div className="mx-auto w-fit"><IconTile icon={Icon} tone={tone} size="lg" /></div>
+      <h1 className="mt-5 text-2xl font-semibold">{title}</h1>
+      {children}
+    </Card>
   );
 }
 
@@ -119,15 +143,14 @@ export function InviteFlow() {
     };
   }, [api, session]);
 
-  if (step === "loading") return <Frame><Loading label="Checking your interview link…" /></Frame>;
+  if (step === "loading") return <Frame><Waiting text="Checking your interview link…" /></Frame>;
   if (step === "invalid" || !info) {
     return (
       <Frame>
-        <Card className="p-6 sm:p-8 max-w-lg mx-auto mt-10">
-          <h1 className="text-xl font-semibold">{error?.title ?? "Link not valid"}</h1>
+        <StatusCard icon={Link2Off} tone="danger" title={error?.title ?? "Link not valid"}>
           <p className="mt-2 text-muted">{error?.text}</p>
-          {token && error?.title === "Connection problem" && <Button className="mt-5" onClick={() => void load(token)}>Try again</Button>}
-        </Card>
+          {token && error?.title === "Connection problem" && <Button className="mt-6" onClick={() => void load(token)}>Try again</Button>}
+        </StatusCard>
       </Frame>
     );
   }
@@ -156,49 +179,60 @@ export function InviteFlow() {
   if (step === "exited" || step === "finished") {
     return (
       <Frame>
-        <Card className="p-6 sm:p-8 max-w-lg mx-auto mt-10 text-center">
-          <h1 className="text-xl font-semibold">{step === "finished" ? "Interview completed" : "You can close this window"}</h1>
+        <StatusCard icon={CheckCircle2} tone={step === "finished" ? "ok" : "accent"} title={step === "finished" ? "Interview completed" : "You can close this window"}>
           <p className="mt-2 text-muted">
             {step === "finished"
               ? `You have completed your mock interview for ${info.courseName} at ${info.universityName}. Your adviser can see your progress.`
               : "Your camera and microphone are off. Nothing was recorded."}
           </p>
-        </Card>
+        </StatusCard>
       </Frame>
     );
   }
 
-  if (step === "preparing") return <Frame><Loading label="Preparing your questions… this can take up to 30 seconds." /></Frame>;
+  if (step === "preparing") return <Frame step={3}><Waiting text="Preparing your questions…" sub="This can take up to 30 seconds." /></Frame>;
 
   if (step === "welcome") {
+    const first = info.studentName.split(" ")[0];
     return (
-      <Frame>
-        <div className="pt-6 sm:pt-12 grid gap-6">
+      <Frame step={1}>
+        <div className="pt-4 sm:pt-10 grid gap-7 animate-rise">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent">Mock interview</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Welcome to your AI Mock Interview.</h1>
-            <p className="mt-2 text-muted">Hello {info.studentName.split(" ")[0]}. This is a timed practice interview, one question at a time.</p>
+            <Badge tone="gold" dot><Sparkles className="size-3" /> AI mock interview</Badge>
+            <h1 className="mt-4 text-[32px] sm:text-[44px] font-semibold tracking-tight leading-[1.08] text-balance">Welcome, {first}.<br /><span className="text-gold-gradient">Your interview practice is ready.</span></h1>
+            <p className="mt-4 text-[17px] text-muted max-w-xl">A timed practice interview, one question at a time, tailored to your course and background.</p>
           </div>
-          <Card className="p-5">
-            <p className="text-sm text-muted">Practising for</p>
-            <p className="mt-1 text-lg font-semibold">{info.courseName}</p>
-            <p className="text-ink-2">{info.universityName}</p>
+          <Card className="overflow-hidden">
+            <div className="brand-rule" />
+            <div className="p-5 sm:p-6 grid sm:grid-cols-[1fr_auto] gap-4 items-center">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted">Practising for</p>
+                <p className="mt-1.5 font-display text-xl font-semibold">{info.courseName}</p>
+                <p className="text-ink-2">{info.universityName}</p>
+              </div>
+              <div className="flex gap-2 flex-wrap"><Badge>ID {info.studentId}</Badge></div>
+            </div>
           </Card>
-          <ul className="grid gap-2 text-sm text-ink-2">
-            <li>1. Check your CV details so your questions fit your background.</li>
-            <li>2. Allow your camera and microphone (used live only, <strong>never recorded</strong>).</li>
-            <li>3. Practise showing your passport and stating your name and student ID.</li>
-            <li>4. Answer each question out loud when the answer timer starts.</li>
-          </ul>
+          <ol className="grid gap-3 sm:grid-cols-2">
+            {([[FileText, "Check your CV details", "so your questions fit your background."], [Mic, "Allow camera and microphone", "used live only, never recorded."], [IdCard, "Practise your introduction", "passport, full name and student ID."], [ClipboardCheck, "Answer out loud", "when each answer timer starts."]] as const).map(([I, t, d], i) => (
+              <li key={t} className="flex gap-3 rounded-2xl border border-line bg-surface p-4">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-fg"><I className="size-[18px]" strokeWidth={1.8} /></span>
+                <span className="text-sm"><span className="block font-medium text-ink">{i + 1}. {t}</span><span className="text-muted">{d}</span></span>
+              </li>
+            ))}
+          </ol>
           {lastSession?.status === "completed" && <Notice tone="ok">You have completed this interview before. You have {info.attemptsLeft} attempt{info.attemptsLeft === 1 ? "" : "s"} left.</Notice>}
-          <div><Button onClick={() => setStep("cv")}>Continue</Button></div>
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <Button size="lg" className="sm:min-w-56" onClick={() => setStep("cv")}>Start interview <ArrowRight /></Button>
+            <p className="text-xs text-muted">No account needed. Nothing is recorded.</p>
+          </div>
         </div>
       </Frame>
     );
   }
 
   return (
-    <Frame>
+    <Frame step={2}>
       <CvStep info={info} api={api!} error={error} onUpdated={setInfo} onStart={start} />
     </Frame>
   );
@@ -256,16 +290,16 @@ function CvStep({ info, api, error, onUpdated, onStart }: {
   }
 
   return (
-    <div className="pt-6 sm:pt-10 grid gap-6">
+    <div className="pt-4 sm:pt-8 grid gap-6 animate-rise">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent">Your background</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{hasCv ? "Check your details" : "Upload your CV"}</h1>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-fg">Your background</p>
+        <h1 className="mt-2 text-[28px] sm:text-[34px] font-semibold tracking-tight">{hasCv ? "Check your details" : "Upload your CV"}</h1>
         <p className="mt-1 text-sm text-muted">Your questions are tailored to your background and your course. Your CV is stored privately and only your adviser can open it.</p>
       </div>
       {error && <Notice tone="danger" title={error.title}>{error.text}</Notice>}
 
-      <Card className="p-5 grid gap-3">
-        <div className="flex items-center gap-2"><p className="font-medium">CV / résumé</p>{hasCv && <Badge tone="ok">Provided</Badge>}</div>
+      <Card className="p-5 sm:p-6 grid gap-4">
+        <div className="flex items-center gap-3"><IconTile icon={FileText} tone="accent" size="sm" /><p className="font-display font-semibold text-[17px]">CV / résumé</p>{hasCv && <Badge tone="ok" dot>Provided</Badge>}</div>
         <input ref={fileRef} type="file" accept=".pdf,.docx" className="sr-only" aria-label="Upload CV" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
         <div
           role="button" tabIndex={0}
@@ -274,8 +308,9 @@ function CvStep({ info, api, error, onUpdated, onStart }: {
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => { e.preventDefault(); setDrag(false); const file = e.dataTransfer.files?.[0]; if (file) upload(file); }}
-          className={cx("flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-4 py-6 text-center cursor-pointer transition", drag ? "border-accent bg-accent-soft" : "border-line hover:border-accent/60")}
+          className={cx("flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-9 text-center cursor-pointer transition focus-visible:ring-4 focus-visible:ring-[var(--ring)]", drag ? "border-accent bg-accent-soft scale-[1.01]" : "border-line-strong hover:border-accent/60 hover:bg-surface-2/60")}
         >
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent-soft text-accent-fg">{busy ? <Spinner className="size-5" /> : <UploadCloud className="size-6" strokeWidth={1.8} />}</span>
           <span className="text-sm font-medium">{busy ? "Reading your CV…" : hasCv ? "Replace CV (optional)" : "Choose your CV or drop it here"}</span>
           <span className="text-xs text-muted">PDF or DOCX, up to 5 MB</span>
         </div>
@@ -283,20 +318,34 @@ function CvStep({ info, api, error, onUpdated, onStart }: {
       </Card>
 
       <form key={JSON.stringify(ctx)} onSubmit={confirmAndStart} className="grid gap-4">
-        <Card className="p-5 grid gap-4">
-          <p className="font-medium">Review your background <span className="text-sm font-normal text-muted">(optional — correct anything that is wrong)</span></p>
-          <Field label="Previous qualification"><Input name="previous_qualification" maxLength={200} defaultValue={info.previousQualification ?? ""} placeholder="e.g. BCom, BSc Computer Science" /></Field>
+        <Card className="p-5 sm:p-6 grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2 flex items-start gap-3"><IconTile icon={BookUser} tone="accent" size="sm" /><div><p className="font-display font-semibold text-[17px]">Review your background</p><p className="text-sm text-muted">Optional. Correct anything that is wrong.</p></div></div>
+          <Field className="sm:col-span-2" label="Previous qualification"><Input name="previous_qualification" maxLength={200} defaultValue={info.previousQualification ?? ""} placeholder="e.g. BCom, BSc Computer Science" /></Field>
           <Field label="Qualifications" hint="One per line."><Textarea name="qualifications" rows={2} defaultValue={ctx.qualifications.map((q) => q.title).join("\n")} /></Field>
           <Field label="Experience" hint="One role per line."><Textarea name="experience" rows={2} defaultValue={ctx.experience.map((x) => [x.role, x.organisation].filter(Boolean).join(", ")).join("\n")} /></Field>
           <Field label="Projects" hint="One per line."><Textarea name="projects" rows={2} defaultValue={ctx.projects.join("\n")} /></Field>
           <Field label="Skills" hint="Comma separated."><Input name="skills" defaultValue={ctx.skills.join(", ")} /></Field>
-          <Field label="Career objective"><Textarea name="career_objective" rows={2} defaultValue={ctx.career_objective ?? ""} /></Field>
+          <Field className="sm:col-span-2" label="Career objective"><Textarea name="career_objective" rows={2} defaultValue={ctx.career_objective ?? ""} /></Field>
         </Card>
         <div className="flex flex-col sm:flex-row gap-3">
-          <Button type="submit" disabled={busy}>{busy ? "Please wait…" : "Continue to camera check"}</Button>
+          <Button size="lg" type="submit" disabled={busy}>{busy ? <><Spinner /> Please wait…</> : <>Continue to camera check <ArrowRight /></>}</Button>
         </div>
         <p className="text-xs text-muted">Next we prepare all your questions, then check your camera and microphone. Nothing is recorded.</p>
       </form>
+    </div>
+  );
+}
+
+function Waiting({ text, sub }: { text: string; sub?: string }) {
+  return (
+    <div className="grid place-items-center py-24 text-center" role="status" aria-live="polite">
+      <span className="relative grid h-16 w-16 place-items-center">
+        <span className="absolute inset-0 rounded-full border-[3px] border-surface-3" />
+        <span className="absolute inset-0 rounded-full border-[3px] border-accent border-r-transparent animate-spin" />
+        <Sparkles className="size-6 text-accent-fg" />
+      </span>
+      <p className="mt-6 font-display text-lg font-semibold">{text}</p>
+      {sub && <p className="mt-1 text-sm text-muted">{sub}</p>}
     </div>
   );
 }

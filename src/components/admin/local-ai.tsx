@@ -1,7 +1,7 @@
 "use client";
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Badge, Button, Card, Field, Input, Notice, Select } from "@/components/ui";
+import { Badge, Button, Card, Field, IconTile, Input, LinkButton, Notice, Section, Select, Spinner, type TileTone } from "@/components/ui";
+import { Cpu, Download, ListChecks, Loader, Play, RefreshCw, ShieldCheck, Sparkles, Wand2, type LucideIcon } from "lucide-react";
 import { checkSupport, getVerified, loadEngine, MODEL_LABEL, setVerified, useLocalAi, type Support, type Verified } from "@/lib/local-ai/engine";
 import { generateLocally, type GeneratedQuestion } from "@/lib/local-ai/tasks";
 import { EMPTY_RESUME_CONTEXT } from "@/lib/ai/context";
@@ -28,7 +28,7 @@ export function AiProgress() {
   if (s.state !== "loading" && s.state !== "checking") return null;
   return (
     <div className="grid gap-1.5" role="status" aria-live="polite">
-      <div className="h-2 rounded-full bg-line overflow-hidden"><div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${Math.round(s.progress * 100)}%` }} /></div>
+      <div className="h-2 rounded-full bg-surface-3 overflow-hidden"><div className="h-full bg-gold-gradient transition-[width] duration-300" style={{ width: `${Math.round(s.progress * 100)}%` }} /></div>
       <p className="text-xs text-muted break-words">{Math.round(s.progress * 100)}% · {s.text}</p>
     </div>
   );
@@ -40,7 +40,7 @@ const SAMPLE = {
 };
 
 export function LocalAiPanel({ courses }: { courses: Array<{ id: string; name: string; modules: string[]; is_verified: boolean; university: { name: string; country: string } }> }) {
-  const { mode, support, verified, refreshVerified } = useAiMode();
+  const { mode, support, verified, refreshVerified, status } = useAiMode();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "danger" | "warn"; text: string } | null>(null);
   const [sample, setSample] = useState<GeneratedQuestion[] | null>(null);
@@ -84,40 +84,57 @@ export function LocalAiPanel({ courses }: { courses: Array<{ id: string; name: s
     } finally { setBusy(false); }
   }
 
+  const ready = !!verified;
+  const loadingNow = status.state === "loading" || status.state === "checking";
+  const tiles: Array<{ icon: LucideIcon; label: string; value: string; tone: TileTone }> = [
+    { icon: Sparkles, label: "Free AI status", value: mode.label, tone: mode.tone === "ok" ? "ok" : mode.tone === "danger" ? "danger" : mode.tone === "warn" ? "warn" : "gold" },
+    { icon: Loader, label: "Initialisation", value: loadingNow ? `${Math.round(status.progress * 100)}% loading` : status.state === "ready" ? "Loaded in this tab" : status.state === "error" ? "Failed" : "Not loaded", tone: status.state === "ready" ? "ok" : status.state === "error" ? "danger" : "neutral" },
+    { icon: Cpu, label: "Device / WebGPU", value: support == null ? "Checking…" : support.ok ? "Supported" : "Not supported", tone: support == null ? "neutral" : support.ok ? "ok" : "warn" },
+    { icon: Wand2, label: "Personalisation", value: ready ? "Available" : "Templates fallback", tone: ready ? "ok" : "warn" },
+  ];
   return (
-    <Card className="p-5 grid gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="font-semibold">Free AI question generator</h2>
-        <Badge tone={mode.tone}>AI Mode: {mode.label}</Badge>
+    <div className="grid gap-5">
+      <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+        {tiles.map((t) => (
+          <Card key={t.label} className="p-4">
+            <div className="flex items-center gap-2.5"><IconTile icon={t.icon} tone={t.tone} size="sm" /><p className="text-xs text-muted">{t.label}</p></div>
+            <p className="mt-3 font-display text-[15px] font-semibold leading-snug">{t.value}</p>
+          </Card>
+        ))}
       </div>
-      <p className="text-sm text-muted">{mode.detail}</p>
-      <ul className="text-xs text-muted grid gap-1">
-        <li>• Runs {MODEL_LABEL} in this browser with WebGPU. Free, no API key, no paid service.</li>
-        <li>• The model (about 1 GB) downloads once from Hugging Face and is cached by the browser. CV text and questions never leave this device until you save them to your database.</li>
-        <li>• Students never download the model. Their interviews use the questions you prepare here.</li>
-        {support && <li>• Device check: {support.ok ? "supported" : "not supported"}{support.details ? ` (${support.details})` : ""}.</li>}
-      </ul>
-      <AiProgress />
-      {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => void testAi()} disabled={busy || (support !== null && !support.ok)}>{busy ? "Working…" : verified ? "Test Free AI again" : "Test Free AI"}</Button>
-        <Link href="/admin/questions/?origin=ai_generated" className="inline-flex h-11 items-center px-4 text-sm text-accent">Review generated questions</Link>
-        <Link href="/admin/" className="inline-flex h-11 items-center px-4 text-sm text-accent">Regenerate interview questions (open a student)</Link>
-      </div>
-      <div className="border-t border-line pt-4 grid gap-3">
-        <p className="font-medium text-sm">Generate sample questions</p>
+
+      <Section title="Free AI question generator" icon={Sparkles} description={mode.detail || "Runs in this browser. No API key, no paid service."}
+        actions={<Badge dot tone={mode.tone === "ok" ? "ok" : mode.tone === "danger" ? "danger" : mode.tone === "warn" ? "warn" : "gold"}>AI Mode: {mode.label}</Badge>}>
+        <div className="grid gap-5">
+          <ul className="grid gap-2.5 sm:grid-cols-3 text-sm">
+            {([[Cpu, `Runs ${MODEL_LABEL} in this browser with WebGPU. Free, no API key, no paid service.`], [Download, "The model (about 1 GB) downloads once from Hugging Face and is cached. CV text and questions never leave this device until you save them."], [ShieldCheck, "Students never download the model. Their interviews use the questions you prepare here."]] as const).map(([I, t]) => (
+              <li key={t} className="rounded-xl border border-line bg-surface-2/50 p-3.5 text-ink-2"><I aria-hidden className="size-4 text-accent-fg mb-2" />{t}</li>
+            ))}
+          </ul>
+          {support && <p className="text-xs text-muted">Device check: {support.ok ? "supported" : "not supported"}{support.details ? ` (${support.details})` : ""}.</p>}
+          <AiProgress />
+          {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void testAi()} disabled={busy || (support !== null && !support.ok)}>{busy ? <><Spinner /> Working…</> : <><Play /> {verified ? "Test Free AI again" : "Test Free AI"}</>}</Button>
+            <LinkButton variant="secondary" href="/admin/questions/?origin=ai_generated"><ListChecks /> Review generated questions</LinkButton>
+            <LinkButton variant="ghost" href="/admin/interviews/"><RefreshCw /> Regenerate for a student</LinkButton>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Generate sample questions" icon={Wand2} description="Try the generator for a course. Nothing is saved.">
         <div className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end">
           <Field label="Course"><Select value={courseId} onChange={(e) => setCourseId(e.target.value)}><option value="">Choose…</option>{courses.map((c) => <option key={c.id} value={c.id}>{c.university.name} — {c.name}</option>)}</Select></Field>
           <Field label="Sample background"><Input value={background} onChange={(e) => setBackground(e.target.value)} placeholder="e.g. BTech Computer Science" /></Field>
-          <Button variant="secondary" onClick={() => void sampleQuestions()} disabled={busy || !verified}>Generate</Button>
+          <Button variant="secondary" onClick={() => void sampleQuestions()} disabled={busy || !verified}><Sparkles /> Generate</Button>
         </div>
-        {!verified && <p className="text-xs text-muted">Run “Test Free AI” first.</p>}
-      </div>
-      {sample && sample.length > 0 && (
-        <ul className="grid gap-2">
-          {sample.map((q, i) => <li key={i} className="rounded-xl border border-line px-3 py-2 text-sm"><Badge tone={q.kind === "personal" ? "accent" : "neutral"}>{q.kind === "personal" ? "personalised" : "course"}</Badge> <span className="ml-1">{q.question}</span>{q.basedOn && <span className="block text-xs text-muted mt-1">Based on: {q.basedOn}</span>}</li>)}
-        </ul>
-      )}
-    </Card>
+        {!verified && <p className="mt-2 text-xs text-muted">Run “Test Free AI” first.</p>}
+        {sample && sample.length > 0 && (
+          <ul className="mt-4 grid gap-2">
+            {sample.map((q, i) => <li key={i} className="rounded-xl border border-line px-4 py-3 text-sm animate-rise"><Badge tone={q.kind === "personal" ? "gold" : "neutral"}>{q.kind === "personal" ? "personalised" : "course"}</Badge> <span className="ml-1">{q.question}</span>{q.basedOn && <span className="block text-xs text-muted mt-1">Based on: {q.basedOn}</span>}</li>)}
+          </ul>
+        )}
+      </Section>
+    </div>
   );
 }

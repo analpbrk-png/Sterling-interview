@@ -11,7 +11,7 @@ import { percent, stageLabel, STATUS_INFO, useLiveChanges, type ProgressRow } fr
 import { LinkActions } from "@/components/admin/link-actions";
 import { PersonalisePanel } from "@/components/admin/personalise-panel";
 import { useAuth } from "@/components/auth-provider";
-import { Badge, Button, Card, FlashBar, LoadError, Loading, PageHeader } from "@/components/ui";
+import { Badge, Button, Card, FlashBar, LoadError, Loading, PageHeader, ProgressBar } from "@/components/ui";
 import { formatDate, formatDuration, STATUS_LABEL } from "@/lib/format";
 
 const Q_STATE: Record<string, { label: string; tone: "neutral" | "accent" | "ok" | "warn" }> = {
@@ -59,19 +59,19 @@ export default function InvitationRecord() {
 
   return (
     <>
-      <PageHeader title={row.student_name} description={<><Link href="/admin/" className="text-accent">← Dashboard</Link> · Student ID {row.student_ref}</>}
+      <PageHeader eyebrow="Student interview" title={row.student_name} description={<><Link href="/admin/interviews/" className="inline-flex items-center gap-1 text-sm font-medium text-accent-fg hover:underline">← Interviews</Link> · Student ID {row.student_ref}</>}
         actions={<LinkActions row={row} run={run} busy={busy} />} />
       <FlashBar flash={flash} />
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <div className="grid gap-6 content-start">
-          <Card className="p-5">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid gap-6 content-start min-w-0">
+          <Card className="p-5 sm:p-6">
             <div className="flex flex-wrap items-center gap-3">
-              <Badge tone={info.tone}>{info.label}</Badge>
+              <Badge dot tone={info.tone}>{info.label}</Badge>
               <span className="text-sm text-ink-2">{stageLabel(row)}</span>
               <span className="ml-auto text-xs text-muted">Updates live</span>
             </div>
-            <p className="mt-4 text-3xl font-semibold tabular-nums">{row.completed_questions} <span className="text-lg text-muted font-normal">of {row.total_questions || "—"} questions</span></p>
-            <div className="mt-2 h-2 rounded-full bg-line"><div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${percent(row)}%` }} /></div>
+            <p className="mt-4 font-display text-4xl font-semibold tabular-nums">{row.completed_questions} <span className="text-lg text-muted font-normal">of {row.total_questions || "—"} questions</span></p>
+            <ProgressBar className="mt-3 h-2" value={percent(row)} tone={row.status === "completed" ? "ok" : "accent"} label="Interview progress" />
             <p className="mt-1 text-sm text-muted">{percent(row)}% complete</p>
           </Card>
 
@@ -84,10 +84,10 @@ export default function InvitationRecord() {
           />
 
           <Card className="divide-y divide-line" id="questions">
-            <div className="p-4"><h2 className="font-semibold">Question progression</h2><p className="text-sm text-muted">Latest attempt. Answers are not recorded; only timing and completion are shown.</p></div>
+            <div className="p-4"><h2 className="font-display text-[17px] font-semibold">Question progression</h2><p className="text-sm text-muted">Latest attempt. Answers are not recorded; only timing and completion are shown.</p></div>
             {questions.length ? questions.map((q) => (
-              <div key={q.position} className={`p-4 flex gap-3 ${q.position === row.current_position ? "bg-accent-soft" : ""}`}>
-                <span className="text-sm text-muted tabular-nums w-6">{q.position + 1}.</span>
+              <div key={q.position} className={`p-4 sm:px-5 flex gap-3 ${q.position === row.current_position ? "bg-accent-soft" : ""}`}>
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-2 text-xs font-semibold text-ink-2 tabular-nums">{q.position + 1}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-ink">{q.question_text}</p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
@@ -103,8 +103,9 @@ export default function InvitationRecord() {
           </Card>
         </div>
 
-        <div className="grid gap-6 content-start">
-          <Card className="p-5 text-sm grid gap-2.5">
+        <div className="grid gap-6 content-start min-w-0">
+          <Card className="p-5 sm:p-6 text-sm grid gap-2.5">
+            <h2 className="font-display text-[17px] font-semibold mb-1">Details</h2>
             {([
               ["University", row.university_name],
               ["Course", row.course_name],
@@ -116,17 +117,17 @@ export default function InvitationRecord() {
               ["Attempts", `${row.attempts_used} of ${row.max_attempts} used`],
               ["Link", row.revoked_at ? `Revoked ${formatDate(row.revoked_at)}` : "Active"],
             ] as const).map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-3"><span className="text-muted">{k}</span><span className="text-right font-medium">{v}</span></div>
+              <div key={k} className="flex justify-between gap-3 border-b border-line last:border-0 pb-2.5 last:pb-0"><span className="text-muted shrink-0">{k}</span><span className="text-right font-medium min-w-0 break-words">{v}</span></div>
             ))}
           </Card>
 
-          <Card className="p-5 grid gap-3">
-            <h2 className="font-semibold">CV</h2>
+          <Card className="p-5 sm:p-6 grid gap-3">
+            <h2 className="font-display text-[17px] font-semibold">CV</h2>
             {docs.length ? docs.map((d) => (
-              <div key={d.id} className="flex items-center gap-2 text-sm">
-                <span className="truncate flex-1">{d.file_name}</span>
+              <div key={d.id} className="flex items-center gap-2 text-sm min-w-0 rounded-xl border border-line p-2.5">
+                <span className="truncate flex-1 min-w-0">{d.file_name}</span>
                 <Badge>{d.uploaded_by}</Badge>
-                <button type="button" className="text-accent font-medium" onClick={() => openDoc(d.storage_path)}>View</button>
+                <button type="button" className="text-accent-fg font-medium" onClick={() => openDoc(d.storage_path)}>View</button>
               </div>
             )) : <p className="text-sm text-muted">No CV yet.</p>}
             <p className="text-xs text-muted">Background: {data.inv.resume_context_status === "confirmed" ? "confirmed by student" : data.inv.resume_context_status === "draft" ? "extracted, not yet reviewed" : "none"}</p>
@@ -136,8 +137,8 @@ export default function InvitationRecord() {
           </Card>
 
           {sessions.length > 0 && (
-            <Card className="p-5 grid gap-2 text-sm">
-              <h2 className="font-semibold">Attempts</h2>
+            <Card className="p-5 sm:p-6 grid gap-2 text-sm">
+              <h2 className="font-display text-[17px] font-semibold">Attempts</h2>
               {sessions.map((s, i) => (
                 <div key={s.id} className="flex justify-between gap-2">
                   <span>#{sessions.length - i} · {formatDate(s.created_at)}</span>

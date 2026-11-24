@@ -25,7 +25,7 @@ export default function Preview() {
   if (!unis) return <Loading />;
   return (
     <>
-      <PageHeader title="Preview a student sequence" description={<Link href="/admin/questions/" className="text-accent">← Question bank</Link>} />
+      <PageHeader title="Preview a student sequence" description={<Link href="/admin/questions/" className="inline-flex items-center gap-1 text-sm font-medium text-accent-fg hover:underline">← Question bank</Link>} />
       <form className="flex flex-col sm:flex-row gap-3 mb-6 max-w-xl" onSubmit={(e) => { e.preventDefault(); setUniId(String(new FormData(e.currentTarget).get("university") ?? "")); setNonce((n) => n + 1); }}>
         <Select name="university" defaultValue="" aria-label="University"><option value="" disabled>Choose a university…</option>{unis.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select>
         <Button type="submit" variant="secondary">Preview</Button>

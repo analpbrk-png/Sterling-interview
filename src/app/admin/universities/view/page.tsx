@@ -30,12 +30,12 @@ export default function UniversityPage() {
   const { u, courses, template } = data;
   return (
     <>
-      <PageHeader title={u.name} description={<Link href="/admin/universities/" className="text-accent">← All universities</Link>}
+      <PageHeader title={u.name} description={<Link href="/admin/universities/" className="inline-flex items-center gap-1 text-sm font-medium text-accent-fg hover:underline">← All universities</Link>}
         actions={template ? <LinkButton variant="secondary" href={`/admin/templates/edit/?id=${template.id}`}>Edit template: {template.name}</LinkButton> : <LinkButton variant="secondary" href={`/admin/templates/edit/?university=${u.id}`}>Create university template</LinkButton>} />
       <FlashBar flash={flash ?? pageFlash} />
       <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
-        <Card className="p-5 h-fit">
-          <h2 className="font-semibold mb-4">Profile</h2>
+        <Card className="p-5 sm:p-6 h-fit">
+          <h2 className="font-display text-[17px] font-semibold mb-4">Profile</h2>
           <form onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(async () => { await saveUniversity(f); await reload(); return "University saved."; }); }} className="grid gap-4">
             <input type="hidden" name="id" value={u.id} />
             <Field label="Name"><Input name="name" defaultValue={u.name} required /></Field>
@@ -52,7 +52,7 @@ export default function UniversityPage() {
         </Card>
         <div className="grid gap-6 content-start">
           <Card className="divide-y divide-line">
-            <div className="p-4"><h2 className="font-semibold">Courses</h2></div>
+            <div className="p-4"><h2 className="font-display text-[17px] font-semibold">Courses</h2></div>
             {courses.length ? courses.map((c) => (
               <Link key={c.id} href={`/admin/courses/view/?id=${c.id}`} className="flex items-center gap-3 p-4 hover:bg-surface-2/60">
                 <div className="min-w-0 flex-1"><p className="font-medium truncate">{c.name}</p><p className="text-sm text-muted">{c.level ?? "Level not set"} · {c.modules.length} modules</p></div>
@@ -61,8 +61,8 @@ export default function UniversityPage() {
               </Link>
             )) : <p className="p-4 text-sm text-muted">No courses yet.</p>}
           </Card>
-          <Card className="p-5">
-            <h2 className="font-semibold mb-4">Add course</h2>
+          <Card className="p-5 sm:p-6">
+            <h2 className="font-display text-[17px] font-semibold mb-4">Add course</h2>
             <form onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void run(async () => { const cid = await saveCourse(f, user!.id); setFlash({ tone: "ok", text: "Course saved." }); router.push(`/admin/courses/view/?id=${cid}`); }); }} className="grid gap-4">
               <input type="hidden" name="university_id" value={u.id} />
               <div className="grid sm:grid-cols-[2fr_1fr] gap-4">

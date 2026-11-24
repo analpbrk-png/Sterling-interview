@@ -60,15 +60,15 @@ export function CourseDocuments({ courseId, officialUrl, onAddModules }: { cours
   };
 
   return (
-    <Card className="p-5 grid gap-3">
-      <h2 className="font-semibold">Course references</h2>
+    <Card className="p-5 sm:p-6 grid gap-3">
+      <h2 className="font-display text-[17px] font-semibold">Course references</h2>
       <p className="text-sm text-muted">Upload the official course handbook or module list (PDF/DOCX), and keep the official link above. Documents are private. AI questions only use modules you mark verified.</p>
-      {officialUrl && <a href={officialUrl} target="_blank" rel="noreferrer" className="text-sm text-accent break-all">{officialUrl}</a>}
+      {officialUrl && <a href={officialUrl} target="_blank" rel="noreferrer" className="text-sm text-accent-fg break-all">{officialUrl}</a>}
       {docs.map((d) => (
         <div key={d.id} className="flex flex-wrap items-center gap-2 text-sm">
           <span className="flex-1 truncate">{d.file_name}</span>
-          <button type="button" className="text-accent" onClick={() => void open(d.storage_path)}>View</button>
-          <button type="button" className="text-accent disabled:opacity-50" disabled={busy || mode.label !== "Free Local AI — Active"} onClick={() => void suggest(d)}>Suggest modules (free AI)</button>
+          <button type="button" className="text-accent-fg" onClick={() => void open(d.storage_path)}>View</button>
+          <button type="button" className="text-accent-fg disabled:opacity-50" disabled={busy || mode.label !== "Free Local AI — Active"} onClick={() => void suggest(d)}>Suggest modules (free AI)</button>
           <button type="button" className="text-danger" onClick={() => void remove(d)}>Delete</button>
         </div>
       ))}

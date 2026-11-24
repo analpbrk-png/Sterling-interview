@@ -13,9 +13,10 @@ export function CameraPreview({ stream, className, label = "Live camera preview 
   }, [stream]);
   const hasVideo = !!stream?.getVideoTracks().length;
   return (
-    <div className={cx("relative overflow-hidden rounded-2xl bg-[#0b1118]", className)}>
+    <div className={cx("relative overflow-hidden rounded-2xl bg-[#15130e] ring-1 ring-black/5 shadow-[var(--shadow-card)]", className)}>
       <video ref={ref} aria-label={label} muted playsInline autoPlay className={cx("h-full w-full object-cover -scale-x-100", !hasVideo && "hidden")} />
       {!hasVideo && <div className="absolute inset-0 grid place-items-center text-xs text-white/60 p-3 text-center">Camera off</div>}
+      {hasVideo && <span className="pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur"><span className="h-1.5 w-1.5 rounded-full bg-[#e8c972]" />Live · not recorded</span>}
     </div>
   );
 }
@@ -28,7 +29,7 @@ export function MicMeter({ level, active, compact = false }: { level: number; ac
       <div className="flex items-end gap-[3px] h-5" aria-hidden>
         {Array.from({ length: bars }, (_, i) => {
           const on = active && level * bars > i;
-          return <span key={i} className={cx("w-[3px] rounded-full transition-[height,background] duration-100", on ? "bg-accent" : "bg-line")} style={{ height: `${30 + (i / bars) * 70}%` }} />;
+          return <span key={i} className={cx("w-[3px] rounded-full transition-[height,background] duration-100", on ? "bg-accent" : "bg-line-strong")} style={{ height: `${30 + (i / bars) * 70}%` }} />;
         })}
       </div>
       <span className="text-xs text-muted">{!active ? "Microphone off" : speaking ? "Hearing you" : "Microphone on"}</span>

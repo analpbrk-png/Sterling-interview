@@ -32,7 +32,7 @@ export function QuestionForm({ q, categories, universities, onSave, busy }: {
     <form onSubmit={(e) => e.preventDefault()} className="grid gap-6">
       {q.id && <input type="hidden" name="id" value={q.id} />}
       <input type="hidden" name="review_status" value={q.review_status} />
-      <Card className="p-5 grid gap-4">
+      <Card className="p-5 sm:p-6 grid gap-4">
         <Field label="Question shown to students"><Textarea name="question_text" rows={3} required defaultValue={q.question_text} /></Field>
         {q.source_text && (
           <div>
@@ -53,8 +53,8 @@ export function QuestionForm({ q, categories, universities, onSave, busy }: {
           <Field label="Country"><Input name="country" defaultValue={q.country} /></Field>
         </div>
       </Card>
-      <Card className="p-5 grid gap-4">
-        <h2 className="font-semibold">Timing</h2>
+      <Card className="p-5 sm:p-6 grid gap-4">
+        <h2 className="font-display text-[17px] font-semibold">Timing</h2>
         <p className="text-sm text-muted -mt-2">Leave blank to use the interview template&apos;s defaults.</p>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Preparation (seconds)"><Input name="prep_seconds" type="number" min={0} max={600} defaultValue={q.prep_seconds ?? ""} placeholder="Template default" /></Field>
@@ -64,8 +64,8 @@ export function QuestionForm({ q, categories, universities, onSave, busy }: {
           </Field>
         </div>
       </Card>
-      <Card className="p-5 grid gap-4">
-        <h2 className="font-semibold">Applicability</h2>
+      <Card className="p-5 sm:p-6 grid gap-4">
+        <h2 className="font-display text-[17px] font-semibold">Applicability</h2>
         {q.mentions_university && <p className="text-sm text-warn">This wording names <strong>{q.mentions_university}</strong>. Select the matching university below before activating.</p>}
         <p className="text-sm text-muted -mt-2">No selection = every university in the country.</p>
         <div className="grid gap-2 sm:grid-cols-2 max-h-56 overflow-auto rounded-xl border border-line p-3">
@@ -80,8 +80,8 @@ export function QuestionForm({ q, categories, universities, onSave, busy }: {
         <Checkbox name="is_sensitive" label="Sensitive question" hint="Only used when the template explicitly allows sensitive questions; students see a notice." defaultChecked={q.is_sensitive} />
         <Field label="Sensitivity reason"><Input name="sensitivity_reason" defaultValue={q.sensitivity_reason ?? ""} /></Field>
       </Card>
-      <Card className="p-5 grid gap-4">
-        <h2 className="font-semibold">Review</h2>
+      <Card className="p-5 sm:p-6 grid gap-4">
+        <h2 className="font-display text-[17px] font-semibold">Review</h2>
         <Field label="Review notes"><Textarea name="review_notes" rows={3} defaultValue={q.review_notes ?? ""} /></Field>
         {q.review_status === "approved" && <Checkbox name="is_active" label="Active (can appear in interviews)" defaultChecked={q.is_active} />}
         <div className="flex flex-wrap gap-2">

@@ -42,7 +42,7 @@ export default function EditTemplate() {
   });
   return (
     <>
-      <PageHeader title={t?.name ?? "New template"} description={<Link href="/admin/templates/" className="text-accent">← Templates</Link>} />
+      <PageHeader title={t?.name ?? "New template"} description={<Link href="/admin/templates/" className="inline-flex items-center gap-1 text-sm font-medium text-accent-fg hover:underline">← Templates</Link>} />
       <FlashBar flash={flash ?? pageFlash} />
       <TemplateForm key={t?.updated_at ?? "new"} t={t ?? DEFAULTS(university ?? null)} universities={universities} onSave={onSave} busy={busy} />
       {t && <Button className="mt-6" variant="danger" disabled={busy} onClick={() => window.confirm("Delete this template?") && void run(async () => { await deleteTemplate(t.id); setFlash({ tone: "ok", text: "Template deleted." }); router.push("/admin/templates/"); })}>Delete template</Button>}

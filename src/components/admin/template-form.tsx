@@ -27,7 +27,7 @@ export function TemplateForm({ t, universities, onSave, busy }: { t: TemplateVal
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave(new FormData(e.currentTarget)); }} className="grid gap-6 max-w-3xl">
       {t.id && <input type="hidden" name="id" value={t.id} />}
-      <Card className="p-5 grid gap-4">
+      <Card className="p-5 sm:p-6 grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Template name"><Input name="name" required defaultValue={t.name} /></Field>
           <Field label="Country"><Input name="country" defaultValue={t.country} /></Field>
@@ -40,8 +40,8 @@ export function TemplateForm({ t, universities, onSave, busy }: { t: TemplateVal
         </Field>
         <Checkbox name="is_default" label="Default template for this country" defaultChecked={t.is_default} />
       </Card>
-      <Card className="p-5 grid gap-4">
-        <h2 className="font-semibold">Timing and submission</h2>
+      <Card className="p-5 sm:p-6 grid gap-4">
+        <h2 className="font-display text-[17px] font-semibold">Timing and submission</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Preparation (s)" hint="0, 20, 30 or custom"><Input name="prep_seconds" type="number" min={0} max={600} list="prep-presets" defaultValue={t.prep_seconds} required /></Field>
           <Field label="Answer (s)" hint="60–180 or custom"><Input name="answer_seconds" type="number" min={10} max={900} list="answer-presets" defaultValue={t.answer_seconds} required /></Field>
@@ -59,8 +59,8 @@ export function TemplateForm({ t, universities, onSave, busy }: { t: TemplateVal
         <Checkbox name="include_sensitive" label="Include sensitive questions" hint="Visa history, dependants, health. Students are told before starting." defaultChecked={t.include_sensitive} />
         <Checkbox name="tts_default" label="Read questions aloud by default" defaultChecked={t.tts_default} />
       </Card>
-      <Card className="p-5 grid gap-4">
-        <h2 className="font-semibold">Introduction steps</h2>
+      <Card className="p-5 sm:p-6 grid gap-4">
+        <h2 className="font-display text-[17px] font-semibold">Introduction steps</h2>
         <p className="text-sm text-muted -mt-2">Welcome and camera/microphone check always run.</p>
         <Checkbox name="identity_enabled" label="Passport presentation practice" defaultChecked={t.identity_enabled} />
         <Checkbox name="name_id_step_enabled" label="State full name and student ID" defaultChecked={t.name_id_step_enabled} />

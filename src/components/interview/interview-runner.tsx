@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   effectsOf,
-  formatClock,
   initialState,
   reduce,
   remainingSeconds,
@@ -21,7 +20,10 @@ import { ProgressQueue, type ProgressItem, type QueueStatus } from "@/lib/interv
 import { useMediaStream, useMicLevel } from "@/hooks/use-media";
 import { playCue, useSpeech } from "@/hooks/use-speech";
 import { useClock } from "@/hooks/use-clock";
-import { Button, cx } from "@/components/ui";
+import { Badge, Button, Card, IconTile, cx } from "@/components/ui";
+import { LogOut, Mic, MicOff, RotateCcw, Send, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
+import { SterlingLogo } from "@/components/brand-mark";
+import { TimerRing } from "./timer-ring";
 import { IntroScreen } from "./intro-steps";
 import { CameraPreview, MicMeter } from "./media-bits";
 import { Completion, type CompletionData } from "./completion";
@@ -208,15 +210,21 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
 
   if (needsResume) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold">Resume your interview</h1>
-        <p className="mt-3 text-muted">
-          Your interview was interrupted. You will continue at question {Math.max(1, firstOpen + 1)} of {questions.length}. The timer kept running while you were away.
-        </p>
-        <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-          <Button onClick={resume}>Resume interview</Button>
-          <Button variant="secondary" onClick={endEarly}>End interview</Button>
-        </div>
+      <div className="min-h-dvh flex flex-col brand-backdrop">
+        <TopBar label="Interview paused" progress={Math.max(0, firstOpen) / questions.length} onEnd={endEarly} />
+        <main className="flex-1 grid place-items-center px-5 py-12">
+          <Card className="w-full max-w-md p-7 sm:p-9 text-center animate-rise">
+            <div className="mx-auto w-fit"><IconTile icon={RotateCcw} tone="accent" size="lg" /></div>
+            <h1 className="mt-5 text-2xl font-semibold">Resume your interview</h1>
+            <p className="mt-3 text-muted leading-relaxed">
+              Your interview was interrupted. You will continue at question {Math.max(1, firstOpen + 1)} of {questions.length}. The timer kept running while you were away.
+            </p>
+            <div className="mt-8 flex flex-col gap-3">
+              <Button size="lg" onClick={resume}>Resume interview</Button>
+              <Button variant="ghost" onClick={endEarly}>End interview</Button>
+            </div>
+          </Card>
+        </main>
       </div>
     );
   }
@@ -232,7 +240,7 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
     const isLast = state.step === steps.length - 1;
     return (
       <>
-        <TopBar brandName={brandName} label="Introduction" progress={0} onEnd={endEarly} />
+        <TopBar label={`Introduction · ${state.step + 1} of ${steps.length}`} progress={0} onEnd={endEarly} />
         <IntroScreen
           step={steps[state.step]}
           stepIndex={state.step}
@@ -264,55 +272,62 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
   const canSubmit = state.stage === "awaiting_submit" || (state.stage === "answering" && config.allowEarlySubmit);
   const progress = (state.index + (state.stage === "transition" ? 1 : 0)) / questions.length;
   const micOn = !!media.stream?.getAudioTracks().some((t) => t.readyState === "live");
+  const stageTotal = state.stage === "preparing" ? q.prepSeconds : q.answerSeconds;
+  const msLeft = state.stageEndsAt != null ? Math.max(0, state.stageEndsAt - now) : 0;
+  const fraction = state.stage === "transition" ? 0 : stageTotal > 0 ? msLeft / (stageTotal * 1000) : 0;
+  const hasVideo = !!media.stream?.getVideoTracks().length;
+  void stageLabel;
 
   return (
-    <div className="min-h-dvh flex flex-col">
-      <TopBar brandName={brandName} label={`Question ${state.index + 1} of ${questions.length}`} progress={progress} onEnd={endEarly} sync={syncStatus} />
-      <main className="flex-1 flex flex-col items-center justify-center px-5 sm:px-8 py-8 text-center">
-        <div className="w-full max-w-3xl" aria-live="polite">
-          <p className={cx("text-xs font-semibold uppercase tracking-[0.16em]", state.stage === "answering" ? "text-accent" : state.stage === "awaiting_submit" ? "text-warn" : "text-muted")}>
-            {stageLabel}
-          </p>
-          <p className="mt-2 text-4xl sm:text-5xl font-medium tabular-nums text-ink-2" aria-label={remaining != null ? `${remaining} seconds remaining` : "Timer stopped"} role="timer">
-            {state.stage === "transition" ? "··:··" : formatClock(remaining ?? 0)}
-          </p>
+    <div className="min-h-dvh flex flex-col brand-backdrop">
+      <TopBar label={`Question ${state.index + 1} of ${questions.length}`} progress={progress} onEnd={endEarly} sync={syncStatus} />
+      <main className="flex-1 flex flex-col items-center justify-center px-5 sm:px-8 py-6 sm:py-10">
+        <div key={q.position} className="w-full max-w-3xl flex flex-col items-center text-center animate-rise" aria-live="polite">
+          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/80 px-3 py-1 text-xs font-medium text-ink-2 backdrop-blur">
+            <span className="font-display font-semibold text-accent-fg">Q{state.index + 1}</span><span className="text-muted">of {questions.length}</span>
+          </span>
           <h1
-            key={q.position}
             className={cx(
-              "mt-8 sm:mt-10 font-semibold tracking-tight text-ink leading-[1.25] text-balance transition-opacity duration-300",
-              q.text.length > 160 ? "text-[clamp(1.3rem,3.2vw,2.1rem)]" : "text-[clamp(1.6rem,4.4vw,2.75rem)]",
+              "mt-5 font-display font-semibold tracking-tight text-ink leading-[1.22] text-balance transition-opacity duration-300",
+              q.text.length > 160 ? "text-[clamp(1.25rem,3vw,2rem)]" : "text-[clamp(1.55rem,4.2vw,2.6rem)]",
               state.stage === "transition" && "opacity-30",
             )}
           >
             {q.text}
           </h1>
-          <p className="mt-6 text-sm text-muted">{hint}</p>
+          <div className="mt-8 sm:mt-10">
+            <TimerRing stage={state.stage} remaining={remaining} fraction={fraction} size={typeof window !== "undefined" && window.innerHeight < 700 ? 164 : 208} />
+          </div>
+          <p className={cx("mt-5 text-[15px]", state.stage === "answering" ? "text-ink font-medium" : "text-muted")}>{hint}</p>
         </div>
       </main>
-      <footer className="border-t border-line bg-surface/70 backdrop-blur px-4 sm:px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <footer className="sticky bottom-0 border-t border-line bg-surface/85 backdrop-blur px-4 sm:px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto max-w-5xl flex items-center gap-3 sm:gap-4">
-          {showCamera && media.stream?.getVideoTracks().length ? (
-            <CameraPreview stream={media.stream} className="w-24 sm:w-32 aspect-video shrink-0" />
+          {showCamera && hasVideo ? (
+            <CameraPreview stream={media.stream} className="w-20 sm:w-28 aspect-video shrink-0 rounded-xl" />
           ) : null}
           <div className="flex flex-col gap-1.5 min-w-0">
-            <MicMeter level={level} active={micOn} compact />
+            <div className={cx("inline-flex w-fit items-center gap-2 rounded-full px-2.5 py-1", micOn ? (state.stage === "answering" ? "bg-ok-soft" : "bg-surface-2") : "bg-danger-soft")}>
+              {micOn ? <Mic className={cx("size-3.5", state.stage === "answering" ? "text-ok" : "text-ink-2")} /> : <MicOff className="size-3.5 text-danger" />}
+              <MicMeter level={level} active={micOn} compact />
+            </div>
             <div className="flex gap-3 text-xs">
               {speech.supported && (
-                <button type="button" className="text-muted hover:text-ink" onClick={() => speech.setEnabled(!speech.enabled)}>
-                  {speech.enabled ? "Mute voice" : "Unmute voice"}
+                <button type="button" className="inline-flex items-center gap-1 text-muted hover:text-ink" onClick={() => speech.setEnabled(!speech.enabled)}>
+                  {speech.enabled ? <><VolumeX className="size-3.5" /> Mute voice</> : <><Volume2 className="size-3.5" /> Unmute voice</>}
                 </button>
               )}
-              {media.stream?.getVideoTracks().length ? (
-                <button type="button" className="text-muted hover:text-ink" onClick={() => setShowCamera((v) => !v)}>
-                  {showCamera ? "Hide camera" : "Show camera"}
+              {hasVideo ? (
+                <button type="button" className="inline-flex items-center gap-1 text-muted hover:text-ink" onClick={() => setShowCamera((v) => !v)}>
+                  {showCamera ? <><VideoOff className="size-3.5" /> Hide camera</> : <><Video className="size-3.5" /> Show camera</>}
                 </button>
               ) : null}
             </div>
           </div>
           <div className="ml-auto">
             {canSubmit && (
-              <Button onClick={() => dispatch({ type: "SUBMIT", index: state.index, now: Date.now() })} variant={state.stage === "awaiting_submit" ? "primary" : "secondary"}>
-                {state.stage === "awaiting_submit" ? "Submit Answer" : "Finish answer early"}
+              <Button size="lg" className="px-5" onClick={() => dispatch({ type: "SUBMIT", index: state.index, now: Date.now() })} variant={state.stage === "awaiting_submit" ? "primary" : "secondary"}>
+                <Send /> {state.stage === "awaiting_submit" ? "Submit answer" : "Finish early"}
               </Button>
             )}
           </div>
@@ -322,18 +337,18 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
   );
 }
 
-function TopBar({ brandName, label, progress, onEnd, sync }: { brandName: string; label: string; progress: number; onEnd: () => void; sync?: QueueStatus }) {
+function TopBar({ label, progress, onEnd, sync }: { label: string; progress: number; onEnd: () => void; sync?: QueueStatus }) {
   return (
-    <header className="sticky top-0 z-10 bg-bg/90 backdrop-blur">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 h-14 flex items-center gap-3 text-sm">
-        <span className="font-semibold text-ink truncate">{brandName}</span>
-        <span className="text-muted">·</span>
-        <span className="text-ink-2 whitespace-nowrap">{label}</span>
-        {sync === "retrying" && <span className="text-xs text-warn whitespace-nowrap">Reconnecting…</span>}
-        <button type="button" onClick={onEnd} className="ml-auto text-muted hover:text-danger text-xs whitespace-nowrap">End interview</button>
+    <header className="sticky top-0 z-10 bg-bg/85 backdrop-blur border-b border-line pt-[env(safe-area-inset-top)]">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 h-14 sm:h-16 flex items-center gap-3 text-sm">
+        <SterlingLogo width={88} />
+        <span aria-hidden className="hidden sm:block h-5 w-px bg-line-strong" />
+        <span className="font-medium text-ink-2 whitespace-nowrap truncate">{label}</span>
+        {sync === "retrying" && <Badge tone="warn" dot>Reconnecting…</Badge>}
+        <button type="button" onClick={onEnd} aria-label="End interview" className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 h-9 text-muted hover:text-danger hover:bg-danger-soft text-xs whitespace-nowrap"><LogOut className="size-4 sm:size-3.5" /><span className="hidden sm:inline">End interview</span></button>
       </div>
-      <div className="h-[3px] bg-line" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
-        <div className="h-full bg-accent transition-[width] duration-500" style={{ width: `${progress * 100}%` }} />
+      <div className="h-1 bg-surface-3" role="progressbar" aria-label="Interview progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+        <div className="h-full bg-gold-gradient transition-[width] duration-700 ease-out" style={{ width: `${progress * 100}%` }} />
       </div>
     </header>
   );

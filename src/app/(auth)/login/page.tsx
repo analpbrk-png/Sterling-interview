@@ -10,8 +10,9 @@ export default function LoginPage() {
   const error = useParam("error");
   if (!isSupabaseConfigured) return <SetupNeeded />;
   return (
-    <Card className="p-6 sm:p-8">
-      <h1 className="text-xl font-semibold">Admin sign in</h1>
+    <Card className="p-6 sm:p-9">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-fg">Administrators</p>
+      <h1 className="mt-2 text-[28px] font-semibold tracking-tight">Sign in</h1>
       <p className="mt-1 text-sm text-muted">For administrators only. Students do not need an account: open the interview link your adviser sent you.</p>
       {error && <p className="mt-4 text-sm text-danger">{error}</p>}
       <div className="mt-6"><AuthForm mode="login" next={next ?? "/admin/"} /></div>

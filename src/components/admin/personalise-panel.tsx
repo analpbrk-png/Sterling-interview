@@ -81,7 +81,7 @@ export function PersonalisePanel({ invitationId, adminId, cv, started, onSaved }
     const d = defaultMix(total);
     return { personal: inv?.personal_question_count ?? d.personal, course: inv?.course_question_count ?? d.course };
   }, [inv, total]);
-  if (!inv || !profile || !course) return <Card className="p-5"><p className="text-sm text-muted">Loading personalisation…</p></Card>;
+  if (!inv || !profile || !course) return <Card className="p-5 sm:p-6"><p className="text-sm text-muted">Loading personalisation…</p></Card>;
 
   const aiReady = mode.label === "Free Local AI — Active";
   const genBase = {
@@ -154,9 +154,9 @@ export function PersonalisePanel({ invitationId, adminId, cv, started, onSaved }
   const templates = templateQuestions(profile, pq || null, course.name, mix.personal);
 
   return (
-    <Card className="p-5 grid gap-5" id="personalise">
+    <Card className="p-5 sm:p-6 grid gap-5" id="personalise">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="font-semibold">Personalised questions</h2>
+        <h2 className="font-display text-[17px] font-semibold">Personalised questions</h2>
         <Badge tone={mode.tone}>AI Mode: {mode.label}</Badge>
         {inv.personalised_at && <Badge tone="ok">Saved</Badge>}
       </div>

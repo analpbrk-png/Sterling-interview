@@ -44,7 +44,7 @@ function Gate({ children }: { children: (user: AppUser) => React.ReactNode }) {
         <Card className="p-6">
           <h1 className="text-lg font-semibold">Administrators only</h1>
           <p className="mt-2 text-sm text-muted">This account does not have admin access. Students do not need to sign in: use the interview link from your adviser.</p>
-          <button type="button" className="mt-4 text-sm font-medium text-accent" onClick={() => void signOut()}>Sign out</button>
+          <button type="button" className="mt-4 text-sm font-medium text-accent-fg" onClick={() => void signOut()}>Sign out</button>
         </Card>
       </div>
     );

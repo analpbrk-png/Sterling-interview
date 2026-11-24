@@ -35,7 +35,7 @@ export function AuthForm({ next }: { mode?: "login"; next: string }) {
       {error && <Notice tone="danger">{error}</Notice>}
       <Field label="Email"><Input name="email" type="email" autoComplete="email" required /></Field>
       <Field label="Password"><Input name="password" type="password" autoComplete="current-password" required /></Field>
-      <Button type="submit" disabled={busy} className="w-full">{busy ? "Please wait…" : "Sign in"}</Button>
+      <Button size="lg" type="submit" disabled={busy} className="w-full">{busy ? "Please wait…" : "Sign in"}</Button>
     </form>
   );
 }

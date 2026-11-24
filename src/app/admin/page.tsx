@@ -1,103 +1,98 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { must, useLoad } from "@/lib/use-load";
+import { useState } from "react";
+import { Clock3, Mail, Plus, Radio, Sparkles } from "lucide-react";
+import { STATUS_ICON, useProgressRows } from "@/components/admin/use-progress-rows";
 import { useAction } from "@/lib/use-action";
 import { useFlash } from "@/lib/flash";
 import { useAiMode } from "@/components/admin/local-ai";
-import { percent, stageLabel, STATUS_INFO, useLiveChanges, type InviteStatus, type ProgressRow } from "@/lib/admin/progress";
-import { LinkActions } from "@/components/admin/link-actions";
-import { Badge, Card, EmptyState, FlashBar, Input, LinkButton, LoadError, Loading, PageHeader, Select } from "@/components/ui";
-import { formatDate } from "@/lib/format";
+import { percent, stageLabel, STATUS_INFO, type InviteStatus } from "@/lib/admin/progress";
+import { Avatar, InterviewsTable } from "@/components/admin/interviews-table";
+import { Badge, Card, FlashBar, LinkButton, LoadError, Loading, PageHeader, ProgressBar, Section, StatCard } from "@/components/ui";
+
+const STATUS_BAR: Record<InviteStatus, string> = { not_started: "bg-surface-3", in_progress: "bg-accent", completed: "bg-ok", interrupted: "bg-warn", expired: "bg-danger" };
 
 export default function AdminDashboard() {
   const { mode } = useAiMode();
   const [pageFlash] = useFlash();
   const { run, busy, flash } = useAction();
-  const [q, setQ] = useState("");
-  const [uni, setUni] = useState("");
-  const [course, setCourse] = useState("");
   const [status, setStatus] = useState("");
-  const { data: rows, error, loading, reload } = useLoad(async () =>
-    must(await createClient().from("admin_invitation_progress").select("*").order("created_at", { ascending: false }).limit(1000)) as ProgressRow[], []);
-  useLiveChanges(() => void reload());
-
-  const filtered = useMemo(() => (rows ?? []).filter((r) =>
-    (!q || `${r.student_name} ${r.student_ref}`.toLowerCase().includes(q.toLowerCase())) &&
-    (!uni || r.university_id === uni) && (!course || r.course_id === course) && (!status || r.status === status)), [rows, q, uni, course, status]);
+  const { data: rows, error, loading, reload } = useProgressRows();
   if (loading && !rows) return <Loading />;
   if (error || !rows) return <LoadError error={error ?? "Not found"} onRetry={reload} />;
 
   const count = (s: InviteStatus) => rows.filter((r) => r.status === s).length;
-  const tiles = [
-    { label: "Total invitations", value: rows.length, s: "" },
-    { label: "Pending", value: count("not_started"), s: "not_started" },
-    { label: "In progress", value: count("in_progress"), s: "in_progress" },
-    { label: "Completed", value: count("completed"), s: "completed" },
-    { label: "Interrupted", value: count("interrupted"), s: "interrupted" },
-    { label: "Expired", value: count("expired"), s: "expired" },
-  ];
-  const universities = [...new Map(rows.map((r) => [r.university_id, r.university_name])).entries()];
-  const courses = [...new Map(rows.filter((r) => !uni || r.university_id === uni).map((r) => [r.course_id, r.course_name])).entries()];
+  const live = rows.filter((r) => r.status === "in_progress");
+  const started = rows.filter((r) => r.session_id);
+  const completionRate = started.length ? Math.round((count("completed") / started.length) * 100) : 0;
+  const answered = rows.reduce((a, r) => a + r.completed_questions, 0);
 
   return (
     <>
-      <PageHeader title="Interview dashboard" description={<>Live progress, updated automatically. <Link href="/admin/settings/" className={mode.tone === "ok" ? "text-ok" : "text-warn"}>AI Mode: {mode.label}</Link>{mode.tone !== "ok" && <span className="text-muted"> — until the free AI is tested on this device, interviews use the PDF question bank plus labelled template questions.</span>}</>}
-        actions={<LinkButton href="/admin/invitations/new/">New interview</LinkButton>} />
+      <PageHeader
+        eyebrow="Overview"
+        title="Interview dashboard"
+        description={<span className="inline-flex flex-wrap items-center gap-2">Live progress, updated automatically.
+          <Link href="/admin/ai/"><Badge dot tone={mode.tone === "ok" ? "ok" : mode.tone === "danger" ? "danger" : "gold"}><Sparkles className="size-3" /> AI Mode: {mode.label}</Badge></Link></span>}
+        actions={<LinkButton href="/admin/invitations/new/"><Plus /> New interview</LinkButton>}
+      />
       <FlashBar flash={flash ?? pageFlash} />
-      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 mb-6">
-        {tiles.map((t) => (
-          <button key={t.label} type="button" onClick={() => setStatus(t.s)} className="text-left">
-            <Card className={`p-4 transition ${status === t.s ? "border-accent" : "hover:border-accent/50"}`}>
-              <p className="text-xs text-muted">{t.label}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{t.value}</p>
-            </Card>
-          </button>
-        ))}
+
+      <div className="grid gap-3 sm:gap-4 grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 mb-6 animate-rise">
+        <StatCard label="Total invitations" value={rows.length} icon={Mail} tone="accent" active={status === ""} onClick={() => setStatus("")} hint="All interview links" />
+        <StatCard label="Pending" value={count("not_started")} icon={STATUS_ICON.not_started} tone="neutral" active={status === "not_started"} onClick={() => setStatus("not_started")} hint="Not started yet" />
+        <StatCard label="In progress" value={count("in_progress")} icon={STATUS_ICON.in_progress} tone="gold" active={status === "in_progress"} onClick={() => setStatus("in_progress")} hint="Answering now" />
+        <StatCard label="Completed" value={count("completed")} icon={STATUS_ICON.completed} tone="ok" active={status === "completed"} onClick={() => setStatus("completed")} hint="Finished interviews" />
+        <StatCard label="Interrupted" value={count("interrupted")} icon={STATUS_ICON.interrupted} tone="warn" active={status === "interrupted"} onClick={() => setStatus("interrupted")} hint="Ended early or idle" />
+        <StatCard label="Expired" value={count("expired")} icon={STATUS_ICON.expired} tone="danger" active={status === "expired"} onClick={() => setStatus("expired")} hint="Expired or revoked" />
       </div>
-      <div className="mb-4 grid gap-3 grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_1fr]">
-        <Input placeholder="Search name or student ID" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" />
-        <Select value={uni} onChange={(e) => { setUni(e.target.value); setCourse(""); }} aria-label="University"><option value="">All universities</option>{universities.map(([id, n]) => <option key={id} value={id}>{n}</option>)}</Select>
-        <Select value={course} onChange={(e) => setCourse(e.target.value)} aria-label="Course"><option value="">All courses</option>{courses.map(([id, n]) => <option key={id} value={id}>{n}</option>)}</Select>
-        <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status"><option value="">All statuses</option>{Object.entries(STATUS_INFO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</Select>
-      </div>
-      {filtered.length ? (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted"><tr className="border-b border-line">{["Student", "University / course", "Status", "Progress", "Current stage", "Created", "Actions"].map((h) => <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
-            <tbody>
-              {filtered.map((r) => (
-                <tr key={r.id} className="border-b border-line last:border-0 align-top">
-                  <td className="px-4 py-3"><Link href={`/admin/invitations/view/?id=${r.id}`} className="font-medium text-accent">{r.student_name}</Link><p className="text-xs text-muted">ID {r.student_ref}</p></td>
-                  <td className="px-4 py-3"><p>{r.university_name}</p><p className="text-xs text-muted">{r.course_name}</p></td>
-                  <td className="px-4 py-3"><Badge tone={STATUS_INFO[r.status].tone}>{STATUS_INFO[r.status].label}</Badge>{r.revoked_at && <p className="mt-1 text-xs text-danger">Link revoked</p>}</td>
-                  <td className="px-4 py-3 min-w-36">
-                    {r.total_questions ? (
-                      <>
-                        <p className="tabular-nums">{r.completed_questions}/{r.total_questions} questions · {percent(r)}%</p>
-                        <div className="mt-1.5 h-1.5 rounded-full bg-line"><div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${percent(r)}%` }} /></div>
-                      </>
-                    ) : <span className="text-muted">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-ink-2">{stageLabel(r)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(r.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      <LinkButton className="h-8 px-2.5 text-xs" href={`/admin/invitations/view/?id=${r.id}`}>View progress</LinkButton>
-                      <LinkButton className="h-8 px-2.5 text-xs" variant="secondary" href={`/admin/invitations/view/?id=${r.id}#questions`}>View questions</LinkButton>
-                      <LinkActions row={r} run={run} busy={busy} compact />
-                    </div>
-                  </td>
-                </tr>
+
+      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr] mb-8">
+        <Section title="Status overview" description="Share of all invitations by current status." icon={Clock3}>
+          {rows.length ? (
+            <div className="grid gap-5">
+              <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-2" role="img" aria-label="Status distribution">
+                {(Object.keys(STATUS_INFO) as InviteStatus[]).map((s) => count(s) ? <div key={s} className={STATUS_BAR[s]} style={{ width: `${(count(s) / rows.length) * 100}%` }} title={`${STATUS_INFO[s].label}: ${count(s)}`} /> : null)}
+              </div>
+              <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5 text-sm">
+                {(Object.keys(STATUS_INFO) as InviteStatus[]).map((s) => (
+                  <li key={s} className="flex items-center gap-2"><span aria-hidden className={`h-2.5 w-2.5 rounded-full ${STATUS_BAR[s]} ${s === "not_started" ? "ring-1 ring-line-strong" : ""}`} /><span className="text-ink-2">{STATUS_INFO[s].label}</span><span className="ml-auto tabular-nums text-muted">{count(s)}</span></li>
+                ))}
+              </ul>
+              <div className="grid grid-cols-2 gap-3 border-t border-line pt-4">
+                <div><p className="text-xs text-muted">Completion rate (started)</p><p className="mt-1 font-display text-2xl font-semibold tabular-nums">{completionRate}%</p></div>
+                <div><p className="text-xs text-muted">Questions answered</p><p className="mt-1 font-display text-2xl font-semibold tabular-nums">{answered}</p></div>
+              </div>
+            </div>
+          ) : <p className="text-sm text-muted">No invitations yet.</p>}
+        </Section>
+        <Section title="Live now" description="Students currently in an interview." icon={Radio}
+          actions={live.length ? <Badge dot tone="ok">{live.length} live</Badge> : undefined}>
+          {live.length ? (
+            <ul className="grid gap-3">
+              {live.slice(0, 5).map((r) => (
+                <li key={r.id}>
+                  <Link href={`/admin/invitations/view/?id=${r.id}`} className="flex items-center gap-3 rounded-xl p-2 -m-2 hover:bg-surface-2">
+                    <span className="relative"><Avatar name={r.student_name} /><span aria-hidden className="absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full bg-ok ring-2 ring-surface animate-pulse-ring" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex justify-between gap-2 text-sm"><span className="font-medium truncate">{r.student_name}</span><span className="tabular-nums text-muted">{percent(r)}%</span></span>
+                      <ProgressBar className="mt-1.5" value={percent(r)} label={`${r.student_name} progress`} />
+                      <span className="mt-1 block text-xs text-muted truncate">{stageLabel(r)}</span>
+                    </span>
+                  </Link>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </Card>
-      ) : rows.length ? <EmptyState title="No interviews match these filters" /> : (
-        <EmptyState title="No interviews yet" action={<LinkButton href="/admin/invitations/new/">Create the first interview link</LinkButton>}>Create an interview for a student, then share the link by WhatsApp or email.</EmptyState>
-      )}
-      <p className="mt-4 text-xs text-muted">Progress shows question completion and activity only. Answers are not recorded or scored.</p>
+            </ul>
+          ) : <div className="py-6 text-center text-sm text-muted">No one is taking an interview right now.</div>}
+        </Section>
+      </div>
+
+      <div className="flex items-end justify-between gap-3 mb-4">
+        <div><h2 className="text-xl font-semibold">{status ? STATUS_INFO[status as InviteStatus].label : "Recent"} interviews</h2><p className="text-sm text-muted">Newest first.</p></div>
+        <LinkButton variant="ghost" size="sm" href="/admin/interviews/">Manage all</LinkButton>
+      </div>
+      <InterviewsTable rows={rows} run={run} busy={busy} status={status} onStatus={setStatus} showFilters={false} limit={8} />
+      <Card className="mt-6 px-4 py-3 text-xs text-muted bg-surface-2/60 shadow-none">Progress shows question completion and activity only. Answers are not recorded or scored.</Card>
     </>
   );
 }

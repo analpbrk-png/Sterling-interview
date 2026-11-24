@@ -7,7 +7,8 @@ import { must, useLoad } from "@/lib/use-load";
 import { useAction } from "@/lib/use-action";
 import { useFlash } from "@/lib/flash";
 import { bulkReview } from "@/lib/admin/ops";
-import { Badge, Button, Card, EmptyState, FlashBar, LinkButton, LoadError, Loading, PageHeader, Select } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, FlashBar, Input, LinkButton, LoadError, Loading, PageHeader, ProgressBar, Section, Select, StatCard } from "@/components/ui";
+import { Building2, CheckCircle2, FileText, FileUp, Filter, Library, PlayCircle, Plus, Search, Sparkles, Tags } from "lucide-react";
 
 const STATUS_TONE = { pending_review: "warn", approved: "ok", rejected: "danger" } as const;
 type Filters = { status: string; category: string; origin: string; active: string; sensitive: string };
@@ -19,6 +20,7 @@ export default function Questions() {
   const { run, busy, flash } = useAction();
   const [filters, setFilters] = useState<Filters | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     setFilters({ ...EMPTY, ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, p.get(k) ?? ""])) });
@@ -39,12 +41,21 @@ export default function Questions() {
       s.from("question_sources").select("file_name, page_count").eq("kind", "pdf").order("file_name"),
       s.from("question_bank").select("source_file, question_type, review_status, duplicate_of").eq("origin", "imported"),
     ]);
-    return { rows: must(rows), categories: must(categories), sources: must(sources), imported: must(imported) };
+    const count = async (f: (q: any) => any) => (await f(s.from("question_bank").select("*", { count: "exact", head: true }))).count ?? 0; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const [total, importedN, ai, approved, uni] = await Promise.all([
+      count((q) => q.eq("question_type", "question").is("invitation_id", null)),
+      count((q) => q.eq("origin", "imported")),
+      count((q) => q.eq("origin", "ai_generated")),
+      count((q) => q.eq("review_status", "approved").eq("question_type", "question").is("invitation_id", null)),
+      count((q) => q.neq("applicable_university_ids", "{}")),
+    ]);
+    return { rows: must(rows), categories: must(categories), sources: must(sources), imported: must(imported), stats: { total, importedN, ai, approved, uni } };
   }, [JSON.stringify(filters)]);
 
   if (!filters || (loading && !data)) return <Loading />;
   if (error || !data) return <LoadError error={error ?? "Not found"} onRetry={reload} />;
-  const { rows, categories, sources, imported } = data;
+  const { categories, sources, imported, stats } = data;
+  const rows = search ? data.rows.filter((r) => r.question_text.toLowerCase().includes(search.toLowerCase())) : data.rows;
   const catName = Object.fromEntries(categories.map((c) => [c.id, c.name]));
   const apply = (f: Filters) => {
     setFilters(f);
@@ -62,62 +73,72 @@ export default function Questions() {
 
   return (
     <>
-      <PageHeader title="Question bank" description="Imported, manual and AI-generated questions. Nothing reaches students until it is approved and active."
+      <PageHeader eyebrow="Content" title="Question bank" description="Imported, manual and AI-generated questions. Nothing reaches students until it is approved and active."
         actions={<>
-          <LinkButton href="/admin/questions/import/" variant="secondary">Import PDF</LinkButton>
-          <LinkButton href="/admin/questions/generate/" variant="secondary">Generate with AI</LinkButton>
-          <LinkButton href="/admin/questions/preview/" variant="secondary">Preview sequence</LinkButton>
-          <LinkButton href="/admin/questions/edit/">Add question</LinkButton>
+          <LinkButton href="/admin/questions/import/" variant="secondary"><FileUp /> Import PDF</LinkButton>
+          <LinkButton href="/admin/questions/generate/" variant="secondary"><Sparkles /> Generate with AI</LinkButton>
+          <LinkButton href="/admin/questions/preview/" variant="ghost"><PlayCircle /> Preview</LinkButton>
+          <LinkButton href="/admin/questions/edit/"><Plus /> Add question</LinkButton>
         </>} />
       <FlashBar flash={flash ?? pageFlash} />
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 mb-6 animate-rise">
+        <StatCard label="Total questions" value={stats.total} icon={Library} tone="accent" hint="Shared bank" />
+        <StatCard label="PDF-imported" value={stats.importedN} icon={FileText} tone="gold" hint="Incl. intro steps" />
+        <StatCard label="AI-generated" value={stats.ai} icon={Sparkles} tone="info" hint="All interviews" />
+        <StatCard label="Approved" value={stats.approved} icon={CheckCircle2} tone="ok" hint="Ready to use" />
+        <StatCard label="University-specific" value={stats.uni} icon={Building2} tone="neutral" hint="Restricted" />
+        <StatCard label="Categories" value={categories.length} icon={Tags} tone="neutral" hint="Question types" />
+      </div>
       {sources.length > 0 && (
-        <Card className="mb-6 p-4 overflow-x-auto">
-          <p className="font-medium text-sm mb-2">Imported from PDFs (every page read; original wording kept)</p>
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted"><tr>{["File", "Pages", "Questions", "Intro steps", "Approved", "Duplicates (kept)"].map((h) => <th key={h} className="py-1 pr-4 font-medium">{h}</th>)}</tr></thead>
-            <tbody>
-              {sources.map((src) => {
-                const items = imported.filter((i) => i.source_file === src.file_name);
-                return (
-                  <tr key={src.file_name}>
-                    <td className="py-1 pr-4">{src.file_name}</td><td className="pr-4">{src.page_count}</td>
-                    <td className="pr-4">{items.filter((i) => i.question_type === "question").length}</td>
-                    <td className="pr-4">{items.filter((i) => i.question_type !== "question").length}</td>
-                    <td className="pr-4">{items.filter((i) => i.review_status === "approved").length}</td>
-                    <td>{items.filter((i) => i.duplicate_of).length}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
+        <Section className="mb-6" icon={FileText} title="Imported from PDFs" description="Every page read; original wording kept. Duplicates are linked, not deleted.">
+          <ul className="grid gap-3 md:grid-cols-3">
+            {sources.map((src) => {
+              const items = imported.filter((i) => i.source_file === src.file_name);
+              const qs = items.filter((i) => i.question_type === "question").length;
+              const ok = items.filter((i) => i.review_status === "approved").length;
+              return (
+                <li key={src.file_name} className="rounded-2xl border border-line bg-surface-2/40 p-4">
+                  <p className="font-medium text-sm truncate" title={src.file_name}>{src.file_name}</p>
+                  <p className="text-xs text-muted">{src.page_count} pages</p>
+                  <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                    {([["Questions", qs], ["Intro", items.length - qs], ["Approved", ok], ["Dupes", items.filter((i) => i.duplicate_of).length]] as const).map(([k, v]) => (
+                      <div key={k}><p className="font-display text-lg font-semibold tabular-nums">{v}</p><p className="text-[10.5px] text-muted">{k}</p></div>
+                    ))}
+                  </div>
+                  <ProgressBar className="mt-3" value={items.length ? (ok / items.length) * 100 : 0} tone="ok" label={`${src.file_name} approved`} />
+                </li>
+              );
+            })}
+          </ul>
+        </Section>
       )}
+      <div className="relative mb-3"><Search aria-hidden className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted" /><Input className="pl-10" placeholder="Search question text" aria-label="Search questions" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
       <form className="mb-5 grid gap-3 grid-cols-2 sm:grid-cols-[repeat(5,minmax(0,1fr))_auto] items-end" onSubmit={(e) => { e.preventDefault(); apply(Object.fromEntries(new FormData(e.currentTarget)) as Filters); }}>
         <Select name="status" defaultValue={filters.status} aria-label="Status"><option value="">Any status</option><option value="pending_review">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option></Select>
         <Select name="category" defaultValue={filters.category} aria-label="Category"><option value="">Any category</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
         <Select name="origin" defaultValue={filters.origin} aria-label="Origin"><option value="">Any origin</option><option value="imported">Imported</option><option value="manual">Manual</option><option value="ai_generated">AI generated</option></Select>
         <Select name="active" defaultValue={filters.active} aria-label="Active"><option value="">Active or not</option><option value="1">Active only</option></Select>
         <Select name="sensitive" defaultValue={filters.sensitive} aria-label="Sensitive"><option value="">Any sensitivity</option><option value="1">Sensitive only</option></Select>
-        <Button variant="secondary" type="submit">Filter</Button>
+        <Button variant="secondary" type="submit"><Filter /> Filter</Button>
       </form>
       {rows.length ? (
         <>
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <div className="sticky top-14 lg:top-0 z-10 -mx-1 px-1 py-2 mb-2 bg-bg/90 backdrop-blur flex flex-wrap items-center gap-2 text-sm">
             <label className="flex items-center gap-2 text-muted mr-2"><input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={allSelected} onChange={() => setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)))} />{rows.length} shown · {selected.size} selected</label>
-            <Button disabled={busy || !selected.size} onClick={() => act("approve")}>Approve &amp; activate</Button>
-            <Button variant="secondary" disabled={busy || !selected.size} onClick={() => act("reject")}>Reject</Button>
-            <Button variant="secondary" disabled={busy || !selected.size} onClick={() => act("deactivate")}>Deactivate</Button>
+            <Button size="sm" disabled={busy || !selected.size} onClick={() => act("approve")}>Approve &amp; activate</Button>
+            <Button size="sm" variant="secondary" disabled={busy || !selected.size} onClick={() => act("reject")}>Reject</Button>
+            <Button size="sm" variant="ghost" disabled={busy || !selected.size} onClick={() => act("deactivate")}>Deactivate</Button>
           </div>
           <Card className="divide-y divide-line">
             {rows.map((r) => (
-              <div key={r.id} className="flex gap-3 p-4">
+              <div key={r.id} className="flex gap-3 p-4 sm:px-5 hover:bg-surface-2/40 transition-colors">
                 <input type="checkbox" aria-label="Select" className="mt-1 h-4 w-4 accent-[var(--accent)]" checked={selected.has(r.id)}
                   onChange={() => setSelected((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} />
                 <div className="min-w-0 flex-1">
-                  <Link href={`/admin/questions/edit/?id=${r.id}`} className="font-medium text-ink hover:text-accent">{r.question_text}</Link>
+                  <Link href={`/admin/questions/edit/?id=${r.id}`} className="font-medium text-ink hover:text-accent-fg">{r.question_text}</Link>
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    <Badge tone={STATUS_TONE[r.review_status as keyof typeof STATUS_TONE]}>{r.review_status.replace("_", " ")}</Badge>
-                    {r.is_active && <Badge tone="accent">Active</Badge>}
+                    <Badge dot tone={STATUS_TONE[r.review_status as keyof typeof STATUS_TONE]}>{r.review_status.replace("_", " ")}</Badge>
+                    {r.is_active && <Badge tone="gold">Active</Badge>}
                     <Badge>{catName[r.category_id] ?? r.category_id}</Badge>
                     <Badge>{r.origin === "ai_generated" ? "AI generated" : r.origin}</Badge>
                     {r.question_type !== "question" && <Badge>{r.question_type.replace("_", " ")}</Badge>}
@@ -131,7 +152,7 @@ export default function Questions() {
             ))}
           </Card>
         </>
-      ) : <EmptyState title="No questions match">Try other filters, import a PDF or add a question.</EmptyState>}
+      ) : <EmptyState icon={Search} title="No questions match">Try other filters, import a PDF or add a question.</EmptyState>}
     </>
   );
 }

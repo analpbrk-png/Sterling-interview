@@ -46,7 +46,7 @@ export default function EditQuestion() {
 
   return (
     <>
-      <PageHeader title={q ? "Edit question" : "Add question"} description={<Link href="/admin/questions/" className="text-accent">← Question bank</Link>}
+      <PageHeader title={q ? "Edit question" : "Add question"} description={<Link href="/admin/questions/" className="inline-flex items-center gap-1 text-sm font-medium text-accent-fg hover:underline">← Question bank</Link>}
         actions={q ? <div className="flex gap-2 items-center"><Badge>{q.origin}</Badge>{q.source_file && <Badge>{q.source_file} · page {q.source_page}</Badge>}</div> : undefined} />
       <FlashBar flash={flash ?? pageFlash} />
       {similar.length > 0 && (

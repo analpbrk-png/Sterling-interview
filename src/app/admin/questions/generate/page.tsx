@@ -63,8 +63,8 @@ export default function Generate() {
 
   return (
     <>
-      <PageHeader title="Generate questions with free AI" description={<Link href="/admin/questions/" className="text-accent">← Question bank</Link>} />
-      <Card className="p-5 max-w-3xl grid gap-4">
+      <PageHeader title="Generate questions with free AI" description={<Link href="/admin/questions/" className="inline-flex items-center gap-1 text-sm font-medium text-accent-fg hover:underline">← Question bank</Link>} />
+      <Card className="p-5 sm:p-6 max-w-3xl grid gap-4">
         <div className="flex items-center gap-2"><Badge tone={mode.tone}>AI Mode: {mode.label}</Badge></div>
         {!aiReady && <Notice tone="warn">Run “Test Free AI” in Settings on this device first.</Notice>}
         <p className="text-sm text-muted">Runs on this device ({MODEL_LABEL}). Uses only the course&apos;s verified modules. Saved questions go to the bank as <strong>pending review</strong> and are restricted to that university. For a specific student, use “Personalised questions” on their record instead.</p>
