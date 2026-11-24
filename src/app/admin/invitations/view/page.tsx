@@ -9,6 +9,8 @@ import { setFlash } from "@/lib/flash";
 import { attachResume, deleteInvitation } from "@/lib/admin/ops";
 import { percent, stageLabel, STATUS_INFO, useLiveChanges, type ProgressRow } from "@/lib/admin/progress";
 import { LinkActions } from "@/components/admin/link-actions";
+import { PersonalisePanel } from "@/components/admin/personalise-panel";
+import { useAuth } from "@/components/auth-provider";
 import { Badge, Button, Card, FlashBar, LoadError, Loading, PageHeader } from "@/components/ui";
 import { formatDate, formatDuration, STATUS_LABEL } from "@/lib/format";
 
@@ -24,6 +26,7 @@ const Q_STATE: Record<string, { label: string; tone: "neutral" | "accent" | "ok"
 export default function InvitationRecord() {
   const id = useParam("id");
   const router = useRouter();
+  const { user } = useAuth();
   const { run, busy, flash } = useAction();
   const fileRef = useRef<HTMLInputElement>(null);
   const { data, error, loading, reload } = useLoad(async () => {
@@ -34,7 +37,7 @@ export default function InvitationRecord() {
     const [inv, sessions, docs] = await Promise.all([
       s.from("interview_invitations").select("previous_qualification, resume_context_status, resume_extraction_mode, template_id, question_count, prep_seconds, answer_seconds, submission_mode").eq("id", id).single(),
       s.from("interview_sessions").select("id, status, created_at, started_at, completed_at, duration_seconds, question_count, generation_mode, generation_notice").eq("invitation_id", id).order("created_at", { ascending: false }),
-      s.from("invitation_documents").select("id, file_name, storage_path, uploaded_by, created_at").eq("invitation_id", id),
+      s.from("invitation_documents").select("id, file_name, storage_path, mime_type, uploaded_by, created_at").eq("invitation_id", id),
     ]);
     const list = must(sessions);
     const latest = list[0];
@@ -71,6 +74,14 @@ export default function InvitationRecord() {
             <div className="mt-2 h-2 rounded-full bg-line"><div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${percent(row)}%` }} /></div>
             <p className="mt-1 text-sm text-muted">{percent(row)}% complete</p>
           </Card>
+
+          <PersonalisePanel
+            invitationId={row.id}
+            adminId={user!.id}
+            cv={docs[0] ? { storage_path: docs[0].storage_path, file_name: docs[0].file_name, mime_type: docs[0].mime_type } : null}
+            started={!!row.session_id}
+            onSaved={() => void reload()}
+          />
 
           <Card className="divide-y divide-line" id="questions">
             <div className="p-4"><h2 className="font-semibold">Question progression</h2><p className="text-sm text-muted">Latest attempt. Answers are not recorded; only timing and completion are shown.</p></div>

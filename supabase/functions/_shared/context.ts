@@ -9,6 +9,11 @@ export interface ResumeContext {
   projects: string[];
   skills: string[];
   career_objective: string | null;
+  /** Main subject of the most recent degree, e.g. "Commerce", "Computer Science". */
+  degree_subject?: string | null;
+  academic_interests?: string[];
+  /** Only when the CV itself states a gap (e.g. "2022–2023: career break"). */
+  education_gap?: string | null;
 }
 
 export const EMPTY_RESUME_CONTEXT: ResumeContext = {
@@ -17,6 +22,9 @@ export const EMPTY_RESUME_CONTEXT: ResumeContext = {
   projects: [],
   skills: [],
   career_objective: null,
+  degree_subject: null,
+  academic_interests: [],
+  education_gap: null,
 };
 
 export interface GenerationContext {
@@ -89,6 +97,9 @@ export function sanitiseResumeContext(raw: unknown): ResumeContext {
     projects: arr(r.projects).map((p) => str(p, 200)).filter((p): p is string => !!p).slice(0, 6),
     skills: arr(r.skills).map((s) => str(s, 60)).filter((s): s is string => !!s).slice(0, 20),
     career_objective: str(r.career_objective, 400),
+    degree_subject: str(r.degree_subject, 120),
+    academic_interests: arr(r.academic_interests).map((p) => str(p, 120)).filter((p): p is string => !!p).slice(0, 8),
+    education_gap: str(r.education_gap, 300),
   };
 }
 

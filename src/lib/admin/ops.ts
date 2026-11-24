@@ -313,7 +313,10 @@ export async function createInvitation(form: FormData, resume: File | null): Pro
     course_id: fstr(form, "course_id"),
     template_id: fopt(form, "template_id"),
     question_count: fopt(form, "question_count"),
-    ai_question_count: fopt(form, "ai_question_count"),
+    ai_question_count: fopt(form, "personal_question_count"),
+    bank_question_count: fopt(form, "bank_question_count"),
+    personal_question_count: fopt(form, "personal_question_count"),
+    course_question_count: fopt(form, "course_question_count"),
     prep_seconds: fopt(form, "prep_seconds"),
     answer_seconds: fopt(form, "answer_seconds"),
     submission_mode: fopt(form, "submission_mode"),
@@ -402,4 +405,50 @@ export async function copyToClipboard(text: string) {
   } catch {
     window.prompt("Copy this link:", text);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Personalisation (free local AI runs in this browser; results saved here)
+// ---------------------------------------------------------------------------
+export async function downloadPrivateFile(path: string, name: string, mime: string): Promise<File> {
+  const { data, error } = await db().storage.from("student-documents").download(path);
+  if (error || !data) fail("Could not read the file from private storage.");
+  return new File([data!], name, { type: mime });
+}
+
+export async function saveInvitationProfile(id: string, profile: unknown, previousQualification: string | null, mode: "ai" | "basic" | null) {
+  const { error } = await db().from("interview_invitations").update({
+    resume_context: profile, resume_context_status: "confirmed", previous_qualification: previousQualification,
+    ...(mode ? { resume_extraction_mode: mode } : {}),
+  }).eq("id", id);
+  if (error) fail("Could not save the background.");
+}
+
+export interface PlannedQuestion { question: string; category: string; basedOn: string; kind: "personal" | "course" }
+
+/**
+ * Stores this interview's AI questions. They are tied to this invitation only
+ * (never used for other students) and marked approved because the admin reviewed them.
+ */
+export async function saveInvitationQuestions(invitationId: string, universityId: string, courseId: string, country: string, questions: PlannedQuestion[], model: string, adminId: string) {
+  const { error: delErr } = await db().from("question_bank").delete().eq("invitation_id", invitationId);
+  if (delErr) fail("Could not replace the previous questions.");
+  if (questions.length) {
+    const { error } = await db().from("question_bank").insert(questions.map((q) => ({
+      question_text: q.question.trim(), origin: "ai_generated", category_id: q.category, country,
+      applicable_university_ids: [universityId], generated_for_course: courseId, invitation_id: invitationId,
+      ai_kind: q.kind, ai_model: model, review_status: "approved", is_active: false,
+      reviewed_by: adminId, reviewed_at: new Date().toISOString(), created_by: adminId,
+      review_notes: q.basedOn ? `Based on: ${q.basedOn}` : null,
+    })));
+    if (error) fail(`Could not save the questions: ${error.message}`);
+  }
+  await db().from("interview_invitations").update({ personalised_at: questions.length ? new Date().toISOString() : null, personalised_model: questions.length ? model : null }).eq("id", invitationId);
+}
+
+/** Default split of a question total into PDF-bank / personalised / course questions (15 → 9/4/2). */
+export function defaultMix(total: number) {
+  const personal = Math.round((total * 4) / 15);
+  const course = Math.round((total * 2) / 15);
+  return { bank: Math.max(0, total - personal - course), personal, course };
 }

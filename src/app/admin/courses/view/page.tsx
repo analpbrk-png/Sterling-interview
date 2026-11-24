@@ -7,6 +7,8 @@ import { maybe, must, useLoad, useParam } from "@/lib/use-load";
 import { useAction } from "@/lib/use-action";
 import { setFlash, useFlash } from "@/lib/flash";
 import { addCourseDetail, deleteCourse, deleteCourseDetail, saveCourse } from "@/lib/admin/ops";
+import { CourseDocuments } from "@/components/admin/course-documents";
+import { useState } from "react";
 import { Badge, Button, Card, Checkbox, Field, FlashBar, Input, LoadError, Loading, Notice, PageHeader, Select, Textarea } from "@/components/ui";
 
 export default function CoursePage() {
@@ -15,6 +17,7 @@ export default function CoursePage() {
   const router = useRouter();
   const [pageFlash] = useFlash();
   const { run, busy, flash } = useAction();
+  const [extraModules, setExtraModules] = useState<string[]>([]);
   const { data, error, loading, reload } = useLoad(async () => {
     if (!id) return null;
     const s = createClient();
@@ -42,7 +45,7 @@ export default function CoursePage() {
             <Field label="Level"><Input name="level" defaultValue={c.level ?? ""} /></Field>
             <Field label="Official course link"><Input name="official_url" type="url" defaultValue={c.official_url ?? ""} /></Field>
             <Field label="Description"><Textarea name="description" rows={4} defaultValue={c.description ?? ""} /></Field>
-            <Field label="Modules" hint="One module per line, exactly as on the official course page."><Textarea name="modules" rows={6} defaultValue={c.modules.join("\n")} /></Field>
+            <Field label="Modules" hint="One module per line, exactly as on the official course page."><Textarea key={extraModules.join("|")} name="modules" rows={6} defaultValue={[...c.modules, ...extraModules.filter((m) => !c.modules.includes(m))].join("\n")} /></Field>
             <Checkbox name="is_verified" label="Information verified against the official source" defaultChecked={c.is_verified} hint={c.verified_at ? `Last verified ${new Date(c.verified_at).toLocaleDateString("en-GB")}` : undefined} />
             <Checkbox name="is_active" label="Active (students can choose it)" defaultChecked={c.is_active} />
             <Button type="submit" disabled={busy}>Save course</Button>
@@ -50,6 +53,7 @@ export default function CoursePage() {
           <Button className="mt-4" variant="danger" disabled={busy} onClick={() => window.confirm("Delete this course?") && void run(async () => { await deleteCourse(c.id); setFlash({ tone: "ok", text: "Course deleted." }); router.push(`/admin/universities/view/?id=${uni.id}`); })}>Delete course</Button>
         </Card>
         <div className="grid gap-6 content-start">
+          <CourseDocuments courseId={c.id} officialUrl={c.official_url} onAddModules={(m) => setExtraModules(m)} />
           <Card className="divide-y divide-line">
             <div className="p-4"><h2 className="font-semibold">Course facts</h2><p className="text-sm text-muted">Campus, facilities, assessment, teaching approach.</p></div>
             {details.length ? details.map((d) => (

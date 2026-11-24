@@ -5,14 +5,14 @@ import { createClient } from "@/lib/supabase/client";
 import { must, useLoad } from "@/lib/use-load";
 import { useAction } from "@/lib/use-action";
 import { useFlash } from "@/lib/flash";
-import { useAiStatus } from "@/lib/admin/use-ai-status";
+import { useAiMode } from "@/components/admin/local-ai";
 import { percent, stageLabel, STATUS_INFO, useLiveChanges, type InviteStatus, type ProgressRow } from "@/lib/admin/progress";
 import { LinkActions } from "@/components/admin/link-actions";
 import { Badge, Card, EmptyState, FlashBar, Input, LinkButton, LoadError, Loading, PageHeader, Select } from "@/components/ui";
 import { formatDate } from "@/lib/format";
 
 export default function AdminDashboard() {
-  const ai = useAiStatus();
+  const { mode } = useAiMode();
   const [pageFlash] = useFlash();
   const { run, busy, flash } = useAction();
   const [q, setQ] = useState("");
@@ -43,7 +43,7 @@ export default function AdminDashboard() {
 
   return (
     <>
-      <PageHeader title="Interview dashboard" description={<>Live progress, updated automatically. {ai && !ai.configured && <span className="text-warn">AI personalisation is not configured: interviews use the approved question bank.</span>}</>}
+      <PageHeader title="Interview dashboard" description={<>Live progress, updated automatically. <Link href="/admin/settings/" className={mode.tone === "ok" ? "text-ok" : "text-warn"}>AI Mode: {mode.label}</Link>{mode.tone !== "ok" && <span className="text-muted"> — until the free AI is tested on this device, interviews use the PDF question bank plus labelled template questions.</span>}</>}
         actions={<LinkButton href="/admin/invitations/new/">New interview</LinkButton>} />
       <FlashBar flash={flash ?? pageFlash} />
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 mb-6">
@@ -75,7 +75,7 @@ export default function AdminDashboard() {
                   <td className="px-4 py-3 min-w-36">
                     {r.total_questions ? (
                       <>
-                        <p className="tabular-nums">{r.completed_questions} of {r.total_questions} · {percent(r)}%</p>
+                        <p className="tabular-nums">{r.completed_questions}/{r.total_questions} questions · {percent(r)}%</p>
                         <div className="mt-1.5 h-1.5 rounded-full bg-line"><div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${percent(r)}%` }} /></div>
                       </>
                     ) : <span className="text-muted">—</span>}

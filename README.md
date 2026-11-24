@@ -17,10 +17,23 @@ Admin login → New interview → unique link → share link → student opens l
 | Website: admin panel and student interview page | **GitHub Pages**, static files built by **GitHub Actions** | Next.js static export. No server. |
 | Database, admin login, private CV storage, live updates | **Supabase** (backend) | Row level security on every table; private bucket; Realtime for the dashboard. |
 | Everything a student does (open link, upload CV, start, progress, finish) | **Supabase Edge Function `invite`** | Validates the link token on every call. Students have no direct database access. |
-| AI question generation / CV reading | **Supabase Edge Functions** | The Anthropic key is a Supabase secret, never in the site. |
+| Free AI question generation / CV reading | **Admin's browser** (WebLLM + WebGPU) | Free, open-source model; nothing sent to an AI service. (Optional Anthropic support in Edge Functions remains if a key is set as a Supabase secret.) |
 | Deploying migrations and functions | **GitHub Actions** (`deploy-supabase.yml`) | Runs when `supabase/**` changes on `main` (needs secrets, see below). |
 
 GitHub Pages cannot run backend code, keep secrets, validate links or hold interview state, so all of that is in Supabase. No other website host is used.
+
+### Free AI personalisation (no paid API)
+
+- **Engine:** [WebLLM](https://github.com/mlc-ai/web-llm) running **Qwen2.5-1.5B-Instruct** (Apache-2.0, 4-bit) in the **admin's browser** with WebGPU. No API key, no paid service, no inference server. The model (about 1 GB) downloads once from the public Hugging Face CDN and is cached by the browser. CV text and prompts never leave the admin's device; only the questions the admin saves are written to Supabase.
+- **Students never download the model.** Personalisation is prepared by the admin before the link is used.
+- **Settings → Free AI question generator** checks the device (WebGPU, GPU features, memory, free storage), shows download/initialisation progress, and runs **Test Free AI**: a real generation that must pass the quality checks. Only then does the AI Mode show "Free Local AI — Active" (per device). Other states: Initializing, Unsupported Device, Unavailable, Not tested yet.
+- **Per student (record page → Personalised questions):** "Extract from CV with free AI" reads the CV in the browser, removes contact details, and extracts qualifications, degree subject, academic interests, projects, experience, skills, career goal and an education gap only if the CV states one. Every extracted item must be supported by words in the CV, or it is dropped. The admin reviews and saves the background, then generates personalised + course questions, edits or regenerates individual ones, and saves them **to that interview only**.
+- **Quality checks on every generated question:** must be a real question addressed to the student; must refer to the student's actual background (personal) or the selected course/verified modules (course); no other university, money figures, unverified modules, or names of subjects/tools/companies that are not in the background or course facts; no near-duplicates.
+- **Fallback (stated, never disguised):** if the device cannot run the model or no AI questions were saved, interviews use the PDF question bank plus **template** questions built only from fields present in the reviewed background. These are stored with origin `template`, not `ai_generated`.
+
+### Question mix
+
+Default 15 questions = 9 from the PDF bank + 4 personalised + 2 course/university (scaled for 5–30 or a custom number; editable per interview). The bank has all 44 questions from the three PDFs plus 5 intro steps (passport, audio check, declarations). If personalised or course questions are missing, course-category bank questions and then general bank questions fill the gap without repeats; the New Interview form warns when the bank cannot supply enough different questions.
 
 ### Interview links
 
@@ -94,6 +107,7 @@ npm test                              # unit tests: PDF import, state machine & 
 npm run typecheck
 npm run db:verify                     # migrations + seed on a throwaway local Postgres; RLS, session and account-deletion checks
 node scripts/check-invite.mjs         # live project: link validation, isolation between links, server timing, revoke/regenerate/expiry/attempts
+node scripts/check-mix.mjs            # live project: 10/15/20-question interviews built with the configured mix and no repeats
 ```
 
 The live-project script needs `.env.local` and `.env.test.local` (created by `node scripts/create-test-users.mjs`, which makes a test admin). Remove that test admin before real use (Supabase → Authentication → Users).

@@ -17,6 +17,7 @@
     "db:verify": "bash scripts/verify-db.sh"
   },
   "dependencies": {
+    "@mlc-ai/web-llm": "0.2.87",
     "@supabase/supabase-js": "2.119.2",
     "mammoth": "1.13.0",
     "next": "16.4.6",

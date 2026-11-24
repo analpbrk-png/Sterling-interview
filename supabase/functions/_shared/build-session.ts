@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "./deps.ts";
 import { AI_TIMEOUT_MS, getAIProvider, withTimeout } from "./anthropic.ts";
-import { buildGenerationContext } from "./context.ts";
+import { buildGenerationContext, sanitiseResumeContext } from "./context.ts";
+import { templateQuestions } from "./template-questions.ts";
 import { validateGenerated, type CandidateQuestion } from "./validate.ts";
 import { orderForInterview, selectBankQuestions, type BankQuestion } from "./select.ts";
 import { buildSessionConfig, type TemplateRow } from "./session-config.ts";
@@ -16,6 +17,9 @@ export interface InvitationRow {
   template_id: string | null;
   question_count: number | null;
   ai_question_count: number | null;
+  bank_question_count: number | null;
+  personal_question_count: number | null;
+  course_question_count: number | null;
   prep_seconds: number | null;
   answer_seconds: number | null;
   submission_mode: "manual" | "automatic" | null;
@@ -61,7 +65,7 @@ export async function buildSessionForInvitation(db: SupabaseClient, inv: Invitat
 
   const { data: bankRows } = await db.from("question_bank")
     .select("id, origin, question_text, question_type, category_id, country, applicable_university_ids, is_active, review_status, is_sensitive, is_mandatory, similarity_group, prep_seconds, answer_seconds, submission_mode")
-    .eq("is_active", true).eq("review_status", "approved").eq("country", university.country).eq("question_type", "question");
+    .eq("is_active", true).eq("review_status", "approved").eq("country", university.country).eq("question_type", "question").is("invitation_id", null);
   const bank = (bankRows ?? []) as BankQuestion[];
 
   const { data: previous } = await db.from("interview_sessions").select("id").eq("invitation_id", inv.id);
@@ -71,48 +75,73 @@ export async function buildSessionForInvitation(db: SupabaseClient, inv: Invitat
     qs?.forEach((r) => r.question_id && recentIds.add(r.question_id));
   }
 
-  const provider = aiEnabled ? getAIProvider() : null;
-  const aiSlots = provider ? Math.min(t.ai_question_count, aiMax, t.question_count) : 0;
-  const pick = (count: number) => selectBankQuestions(bank, {
-    country: university.country, universityId: university.id, count, includeSensitive: t.include_sensitive, recentIds,
-  });
-  const picked = pick(t.question_count - aiSlots);
+  // ---- Question mix for this interview (admin-configurable; 15 → 9 bank / 4 personal / 2 course) ----
+  const total = inv.question_count ?? t.question_count;
+  const dPersonal = Math.round((total * 4) / 15);
+  const dCourse = Math.round((total * 2) / 15);
+  const personalN = aiEnabled ? (inv.personal_question_count ?? dPersonal) : 0;
+  const courseN = inv.course_question_count ?? dCourse;
+  const bankN = inv.bank_question_count ?? Math.max(0, total - personalN - courseN);
 
+  // Questions the admin generated with the free local AI and saved for THIS invitation only.
+  const { data: plannedRows } = await db.from("question_bank")
+    .select("id, origin, question_text, question_type, category_id, country, applicable_university_ids, is_active, review_status, is_sensitive, is_mandatory, similarity_group, prep_seconds, answer_seconds, submission_mode, ai_kind")
+    .eq("invitation_id", inv.id).eq("review_status", "approved");
+  const shuffle = <T,>(a: T[]) => a.map((x) => [Math.random(), x] as const).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
+  const planned = shuffle((plannedRows ?? []) as Array<BankQuestion & { ai_kind: string | null }>);
+  const personal: BankQuestion[] = aiEnabled ? planned.filter((q) => q.ai_kind === "personal").slice(0, personalN) : [];
+  const courseAi: BankQuestion[] = planned.filter((q) => q.ai_kind === "course").slice(0, courseN);
+
+  const used = new Set<string>();
+  const usedGroups = new Set<string>();
+  const take = (qs: BankQuestion[]) => { qs.forEach((q) => { used.add(q.id); if (q.similarity_group) usedGroups.add(q.similarity_group); }); return qs; };
+  const remaining = () => bank.filter((q) => !used.has(q.id) && !(q.similarity_group && usedGroups.has(q.similarity_group)));
+
+  // Personal shortfall: optional server AI, then labelled templates (never called AI).
   let aiQuestions: CandidateQuestion[] = [];
-  let notice: string | null = null;
-  const aiNeeded = provider ? Math.min(aiMax, t.question_count - picked.length) : 0;
-  if (!aiEnabled) notice = "Personalised questions are switched off by the administrator. This session uses approved question-bank questions only.";
-  else if (!provider) notice = "AI personalisation is not configured on this server. This session uses approved question-bank questions only.";
-  else if (aiNeeded > 0) {
+  const templateRows: BankQuestion[] = [];
+  const personalShort = personalN - personal.length;
+  const provider = aiEnabled && personalShort > 0 ? getAIProvider() : null;
+  const resumeStatus = inv.resume_context_status === "none" ? "none" : "confirmed";
+  if (provider) {
     const { data: details } = await db.from("university_course_details").select("kind, content, is_verified").eq("course_id", course.id);
-    // Only this invitation's own background is used.
-    const context = buildGenerationContext({
-      profile: {
-        previous_qualification: inv.previous_qualification,
-        resume_context: inv.resume_context,
-        resume_context_status: inv.resume_context_status === "none" ? "none" : "confirmed",
-      },
-      university, course, details: details ?? [],
-    });
+    const context = buildGenerationContext({ profile: { previous_qualification: inv.previous_qualification, resume_context: inv.resume_context, resume_context_status: resumeStatus }, university, course, details: details ?? [] });
     try {
-      const candidates = await withTimeout(
-        provider.generateQuestions({ context, count: aiNeeded, avoid: picked.map((p) => p.question_text), examples: bank.slice(0, 8).map((b) => b.question_text) }),
-        AI_TIMEOUT_MS + 2000,
-      );
-      aiQuestions = validateGenerated(candidates, context, picked.map((p) => p.question_text)).accepted.slice(0, aiNeeded);
-      if (aiQuestions.length < aiNeeded) notice = "Fewer personalised questions than planned passed our quality checks; the rest come from the approved question bank.";
+      const candidates = await withTimeout(provider.generateQuestions({ context, count: personalShort, avoid: bank.slice(0, 30).map((b) => b.question_text), examples: bank.slice(0, 8).map((b) => b.question_text) }), AI_TIMEOUT_MS + 2000);
+      aiQuestions = validateGenerated(candidates, context, bank.map((b) => b.question_text)).accepted.slice(0, personalShort);
     } catch (err) {
       console.error("[ai] generation failed", err instanceof Error ? err.message : err);
-      notice = "AI personalisation was temporarily unavailable. This session uses approved question-bank questions only.";
     }
   }
-  const finalBank = picked.length + aiQuestions.length < t.question_count ? pick(t.question_count - aiQuestions.length) : picked;
+  if (aiEnabled && personal.length + aiQuestions.length < personalN) {
+    const ctx = sanitiseResumeContext(inv.resume_context);
+    for (const tq of templateQuestions(ctx, inv.previous_qualification, course.name, personalN - personal.length - aiQuestions.length)) {
+      templateRows.push({
+        id: null as unknown as string, origin: "template" as BankQuestion["origin"], question_text: tq.question, question_type: "question",
+        category_id: tq.category, country: university.country, applicable_university_ids: [], is_active: false, review_status: "approved",
+        is_sensitive: false, is_mandatory: false, similarity_group: null, prep_seconds: null, answer_seconds: null, submission_mode: null,
+      });
+    }
+  }
+
+  take([...personal, ...courseAi]);
+  // Course shortfall: course/university questions from the PDF bank, preferring ones restricted to this university.
+  const COURSE_CATS = new Set(["why_course", "course_modules", "why_university", "university_research"]);
+  const courseShort = courseN - courseAi.length;
+  const courseBank = courseShort > 0
+    ? take(selectBankQuestions(remaining().filter((q) => COURSE_CATS.has(q.category_id)).sort((a, b) => b.applicable_university_ids.length - a.applicable_university_ids.length), {
+        country: university.country, universityId: university.id, count: courseShort, includeSensitive: t.include_sensitive, recentIds,
+      }))
+    : [];
+  const personalFilled = personal.length + aiQuestions.length + templateRows.length;
+  const bankCount = bankN + (personalN - personalFilled) + (courseShort - courseBank.length);
+  const general = take(selectBankQuestions(remaining(), { country: university.country, universityId: university.id, count: bankCount, includeSensitive: t.include_sensitive, recentIds }));
 
   const aiRows: BankQuestion[] = [];
   if (aiQuestions.length) {
     const { data: inserted } = await db.from("question_bank").insert(aiQuestions.map((q) => ({
       question_text: q.question, origin: "ai_generated", category_id: q.category, country: university.country,
-      applicable_university_ids: [university.id], generated_for_course: course.id,
+      applicable_university_ids: [university.id], generated_for_course: course.id, invitation_id: inv.id, ai_kind: "personal",
       review_status: "pending_review", is_active: false, review_notes: q.rationale ? `AI rationale: ${q.rationale}` : null,
     }))).select("id");
     aiQuestions.forEach((q, i) => aiRows.push({
@@ -123,13 +152,24 @@ export async function buildSessionForInvitation(db: SupabaseClient, inv: Invitat
     }));
   }
 
-  const sequence = orderForInterview([...finalBank, ...aiRows]);
+  const finalBank = [...courseBank, ...general];
+  const aiCount = personal.length + courseAi.length + aiRows.length;
+  const sequence = orderForInterview(shuffle([...finalBank, ...personal, ...courseAi, ...aiRows, ...templateRows]));
   if (!sequence.length) throw new BuildError("empty_question_bank", "No approved questions are available for this university yet. Please contact your adviser.");
+
+  const parts = [`${finalBank.length} from the interview question bank`];
+  if (aiCount) parts.push(`${aiCount} personalised for you`);
+  if (templateRows.length) parts.push(`${templateRows.length} based on your background (standard templates)`);
+  let notice: string | null = sequence.length < total
+    ? `This interview has ${sequence.length} questions (${parts.join(", ")}): fewer than the ${total} planned because not enough different approved questions were available.`
+    : null;
+  if (!aiEnabled) notice = "Personalised questions are switched off by the administrator. This interview uses the question bank only.";
+  const mode = aiCount && templateRows.length ? "bank_ai_template" : aiCount ? "bank_and_ai" : templateRows.length ? "bank_and_template" : "bank_only";
 
   const config = buildSessionConfig(t, Number(settings.tts_rate ?? 0.95));
   const { data: session, error } = await db.from("interview_sessions").insert({
     invitation_id: inv.id, template_id: template.id, university_name: university.name, course_name: course.name,
-    generation_mode: aiRows.length ? "bank_and_ai" : "bank_only", generation_notice: notice, config, question_count: sequence.length,
+    generation_mode: mode, generation_notice: notice, config, question_count: sequence.length,
   }).select("id").single();
   if (error || !session) throw new BuildError("storage", "Could not create the interview. Please try again.");
   const { error: qErr } = await db.from("interview_session_questions").insert(sequence.map((q, position) => ({
@@ -143,6 +183,6 @@ export async function buildSessionForInvitation(db: SupabaseClient, inv: Invitat
     await db.from("interview_sessions").delete().eq("id", session.id);
     throw new BuildError("storage", "Could not save the question sequence. Please try again.");
   }
-  await db.from("interview_events").insert({ session_id: session.id, event_type: "session_created", payload: { bank: finalBank.length, ai: aiRows.length, notice } });
+  await db.from("interview_events").insert({ session_id: session.id, event_type: "session_created", payload: { bank: finalBank.length, ai: aiCount, template: templateRows.length, planned: total, notice } });
   return session.id as string;
 }
