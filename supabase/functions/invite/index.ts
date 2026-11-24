@@ -49,6 +49,41 @@ async function sessionPayload(db: SupabaseClient, sessionId: string) {
   return { ...s, questions: qs ?? [] };
 }
 
+const AUDIO_BUCKET = "interview-audio";
+const AUDIO_TYPES: Record<string, string> = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/aac": "aac", "audio/mpeg": "mp3", "audio/wav": "wav" };
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+
+/** Checks the file's leading bytes match an audio container we accept. */
+function audioSignatureOk(mime: string, b: Uint8Array) {
+  const ascii = (o: number, n: number) => String.fromCharCode(...b.slice(o, o + n));
+  if (b.length < 12) return false;
+  switch (mime) {
+    case "audio/webm": return b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
+    case "audio/ogg": return ascii(0, 4) === "OggS";
+    case "audio/mp4": return ascii(4, 4) === "ftyp";
+    case "audio/wav": return ascii(0, 4) === "RIFF" && ascii(8, 4) === "WAVE";
+    case "audio/mpeg": return ascii(0, 3) === "ID3" || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0);
+    case "audio/aac": return b[0] === 0xff && (b[1] & 0xf6) === 0xf0;
+    default: return false;
+  }
+}
+
+const int = (v: unknown, max: number) => (Number.isFinite(v) && (v as number) >= 0 ? Math.min(Math.round(v as number), max) : null);
+
+/** The session question this token may upload audio for, or an error message. */
+async function audioTarget(db: SupabaseClient, inv: Inv, sessionId: string | null, position: unknown) {
+  if (!sessionId || !Number.isInteger(position)) return { error: "Bad request" };
+  const { data: s } = await db.from("interview_sessions").select("id, audio_consent").eq("id", sessionId).eq("invitation_id", inv.id).maybeSingle();
+  if (!s) return { error: "Session not found" };
+  if (!s.audio_consent) return { error: "Recording consent was not given for this interview." };
+  const { data: q } = await db.from("interview_session_questions")
+    .select("id, answer_seconds, answer_started_at, state").eq("session_id", s.id).eq("position", position as number).maybeSingle();
+  if (!q || !q.answer_started_at) return { error: "This question has no answer to record." };
+  // Uploads are accepted for a limited time after the answer began.
+  if (Date.now() - new Date(q.answer_started_at).getTime() > (q.answer_seconds + 6 * 3600) * 1000) return { error: "Upload window closed." };
+  return { session: s, question: q };
+}
+
 function invitationSummary(inv: Inv) {
   return {
     studentName: inv.student_name,
@@ -58,6 +93,7 @@ function invitationSummary(inv: Inv) {
     resumeStatus: inv.resume_context_status,
     resumeExtractionMode: inv.resume_extraction_mode,
     attemptsLeft: Math.max(0, inv.max_attempts - inv.attempts_used),
+    audioConsent: (inv as Inv & { audio_consent: boolean | null }).audio_consent ?? null,
   };
 }
 
@@ -165,6 +201,7 @@ Deno.serve(async (req) => {
         }
         try {
           const id = await buildSessionForInvitation(db, inv);
+          await db.from("interview_sessions").update({ audio_consent: (inv as Inv & { audio_consent: boolean | null }).audio_consent === true }).eq("id", id);
           return json(req, { session: await sessionPayload(db, id), serverNow: Date.now() });
         } catch (err) {
           // Give the attempt back if nothing was created.
@@ -172,6 +209,69 @@ Deno.serve(async (req) => {
           if (err instanceof BuildError) return json(req, { error: err.message, code: err.code }, 400);
           throw err;
         }
+      }
+      case "consent": {
+        if (typeof body.granted !== "boolean") return json(req, { error: "Bad request" }, 400);
+        await db.from("interview_invitations").update({ audio_consent: body.granted, audio_consent_at: new Date().toISOString() }).eq("id", inv.id);
+        // Applies to an interview that has not started answering yet (e.g. resumed before question 1).
+        const active = await activeSession(db, inv.id);
+        if (active) await db.from("interview_sessions").update({ audio_consent: body.granted }).eq("id", active);
+        return json(req, { ok: true, granted: body.granted });
+      }
+      case "audio_begin": {
+        const t = await audioTarget(db, inv, sessionId, body.position);
+        if ("error" in t) return json(req, { error: t.error }, 403);
+        const mime = String(body.mime ?? "").split(";")[0].trim().toLowerCase();
+        const ext = AUDIO_TYPES[mime];
+        if (!ext) return json(req, { error: "Unsupported audio format." }, 400);
+        const meta = {
+          answer_window_ms: t.question.answer_seconds * 1000,
+          recorded_duration_ms: int(body.recordedMs, 3_600_000),
+          speech_duration_ms: int(body.speechMs, 3_600_000),
+          silence_duration_ms: int(body.silenceMs, 3_600_000),
+          speech_is_estimate: body.speechIsEstimate !== false,
+          vad: typeof body.vad === "object" && body.vad ? JSON.parse(JSON.stringify(body.vad).slice(0, 2000)) : {},
+          is_partial: body.partial === true,
+        };
+        const { data: existing } = await db.from("interview_answer_recordings").select("id, storage_path, upload_status, mime_type").eq("session_question_id", t.question.id).maybeSingle();
+        if (existing?.upload_status === "uploaded") return json(req, { recordingId: existing.id, alreadyUploaded: true });
+        let rec = existing;
+        if (!rec || rec.mime_type !== mime) {
+          if (rec) await db.from("interview_answer_recordings").delete().eq("id", rec.id);
+          const id = crypto.randomUUID();
+          const path = `${t.session.id}/${t.question.id}/${id}.${ext}`;
+          const { data: ins, error } = await db.from("interview_answer_recordings")
+            .insert({ id, session_id: t.session.id, session_question_id: t.question.id, storage_path: path, mime_type: mime, ...meta })
+            .select("id, storage_path, upload_status, mime_type").single();
+          if (error) {
+            // A parallel request created it first: reuse that row.
+            const { data: again } = await db.from("interview_answer_recordings").select("id, storage_path, upload_status, mime_type").eq("session_question_id", t.question.id).single();
+            if (again?.upload_status === "uploaded") return json(req, { recordingId: again.id, alreadyUploaded: true });
+            rec = again;
+          } else rec = ins;
+        } else {
+          await db.from("interview_answer_recordings").update({ ...meta, upload_status: "pending" }).eq("id", rec.id);
+        }
+        const { data: signed, error: sErr } = await db.storage.from(AUDIO_BUCKET).createSignedUploadUrl(rec!.storage_path, { upsert: true });
+        if (sErr || !signed) return json(req, { error: "Could not prepare the upload." }, 500);
+        return json(req, { recordingId: rec!.id, path: rec!.storage_path, uploadToken: signed.token, bucket: AUDIO_BUCKET });
+      }
+      case "audio_finish": {
+        const t = await audioTarget(db, inv, sessionId, body.position);
+        if ("error" in t) return json(req, { error: t.error }, 403);
+        const { data: rec } = await db.from("interview_answer_recordings").select("id, storage_path, mime_type, upload_status").eq("session_question_id", t.question.id).maybeSingle();
+        if (!rec || rec.id !== body.recordingId) return json(req, { error: "Recording not found." }, 404);
+        if (rec.upload_status === "uploaded") return json(req, { ok: true });
+        const { data: file } = await db.storage.from(AUDIO_BUCKET).download(rec.storage_path);
+        if (!file) return json(req, { error: "Upload not found yet.", code: "not_ready" }, 409);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (bytes.length === 0 || bytes.length > MAX_AUDIO_BYTES || !audioSignatureOk(rec.mime_type, bytes)) {
+          await db.storage.from(AUDIO_BUCKET).remove([rec.storage_path]);
+          await db.from("interview_answer_recordings").update({ upload_status: "failed" }).eq("id", rec.id);
+          return json(req, { error: "The audio file was not valid." }, 400);
+        }
+        await db.from("interview_answer_recordings").update({ upload_status: "uploaded", uploaded_at: new Date().toISOString(), file_size: bytes.length }).eq("id", rec.id);
+        return json(req, { ok: true });
       }
       case "progress": {
         if (!sessionId || !STATES.includes(body.state) || !Number.isInteger(body.position)) return json(req, { error: "Bad request" }, 400);

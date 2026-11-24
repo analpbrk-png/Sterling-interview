@@ -277,6 +277,7 @@ export async function saveSettings(form: FormData, adminId: string) {
     ai_max_questions_per_session: Math.min(20, Math.max(0, fint(form, "ai_max_questions_per_session") ?? 6)),
     tts_rate: Math.min(1.3, Math.max(0.7, Number(fstr(form, "tts_rate")) || 0.95)),
     document_retention_days: Math.min(3650, Math.max(30, fint(form, "document_retention_days") ?? 365)),
+    audio_retention_days: Math.min(3650, Math.max(7, fint(form, "audio_retention_days") ?? 365)),
   };
   for (const [key, value] of Object.entries(values)) {
     const { error } = await db().from("admin_settings").upsert({ key, value, updated_by: adminId, updated_at: new Date().toISOString() });
@@ -294,7 +295,15 @@ export async function runRetention(): Promise<string> {
     await db().storage.from("student-documents").remove(old.map((o) => o.storage_path));
     await db().from("invitation_documents").delete().in("id", old.map((o) => o.id));
   }
-  return `Retention run complete: ${old?.length ?? 0} document(s) older than ${days} days deleted.`;
+  const { data: a } = await db().from("admin_settings").select("value").eq("key", "audio_retention_days").maybeSingle();
+  const audioDays = Number(a?.value ?? 365);
+  const audioCutoff = new Date(Date.now() - audioDays * 86_400_000).toISOString();
+  const { data: oldAudio } = await db().from("interview_answer_recordings").select("id, storage_path").lt("created_at", audioCutoff).limit(1000);
+  if (oldAudio?.length) {
+    await db().storage.from("interview-audio").remove(oldAudio.map((o) => o.storage_path));
+    await db().from("interview_answer_recordings").delete().in("id", oldAudio.map((o) => o.id)); // transcripts and analysis cascade
+  }
+  return `Retention run complete: ${old?.length ?? 0} document(s) older than ${days} days and ${oldAudio?.length ?? 0} answer recording(s) older than ${audioDays} days deleted, with their transcripts and analysis.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +404,8 @@ export async function allowRetry(id: string) {
 export async function deleteInvitation(id: string) {
   const { data: docs } = await db().from("invitation_documents").select("storage_path").eq("invitation_id", id);
   if (docs?.length) await db().storage.from("student-documents").remove(docs.map((d) => d.storage_path));
+  const { data: sessions } = await db().from("interview_sessions").select("id").eq("invitation_id", id);
+  if (sessions?.length) await deleteSessionAudio(sessions.map((x) => x.id));
   const { error } = await db().from("interview_invitations").delete().eq("id", id);
   if (error) fail("Could not delete the interview.");
 }
@@ -451,4 +462,15 @@ export function defaultMix(total: number) {
   const personal = Math.round((total * 4) / 15);
   const course = Math.round((total * 2) / 15);
   return { bank: Math.max(0, total - personal - course), personal, course };
+}
+
+/** Deletes answer recordings (files, transcripts, analysis) for the given sessions. */
+export async function deleteSessionAudio(sessionIds: string[]): Promise<number> {
+  const { data: recs } = await db().from("interview_answer_recordings").select("id, storage_path").in("session_id", sessionIds);
+  if (!recs?.length) return 0;
+  const { error: sErr } = await db().storage.from("interview-audio").remove(recs.map((r) => r.storage_path));
+  if (sErr) fail("Could not delete the audio files.");
+  const { error } = await db().from("interview_answer_recordings").delete().in("id", recs.map((r) => r.id));
+  if (error) fail("Could not delete the recordings.");
+  return recs.length;
 }

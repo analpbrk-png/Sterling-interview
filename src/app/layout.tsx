@@ -25,8 +25,8 @@ export const viewport: Viewport = {
   ],
 };
 
-// Applies a saved light/dark choice before first paint (no flash). Inline, no external script.
-const THEME_INIT = `try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+// Applies saved theme and admin sidebar state before first paint (no flash). Inline, no external script.
+const THEME_INIT = `try{var d=document.documentElement,t=localStorage.getItem("theme");if(t==="light"||t==="dark")d.dataset.theme=t;d.dataset.sidebar=localStorage.getItem("sidebar")==="collapsed"?"collapsed":"expanded"}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

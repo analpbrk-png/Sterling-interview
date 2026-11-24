@@ -17,6 +17,8 @@ import {
 } from "@/lib/interview/machine";
 import type { SessionConfig } from "@/lib/interview/config";
 import { ProgressQueue, type ProgressItem, type QueueStatus } from "@/lib/interview/progress-queue";
+import { AnswerRecorder, pickAudioFormat } from "@/lib/interview/answer-recorder";
+import { AudioUploadQueue, type AudioUploadApi, type UploadStatus } from "@/lib/interview/audio-uploads";
 import { useMediaStream, useMicLevel } from "@/hooks/use-media";
 import { playCue, useSpeech } from "@/hooks/use-speech";
 import { useClock } from "@/hooks/use-clock";
@@ -54,6 +56,8 @@ export interface RunnerProps {
   identity: { fullName: string; studentId: string } | null;
   /** Missing only in the development preview: nothing is saved. */
   api?: RunnerApi;
+  /** Present only when the student consented to audio recording of answers. */
+  audio?: AudioUploadApi | null;
   attemptsLeft?: number;
   onExit: () => void;
   onAgain?: () => void;
@@ -61,7 +65,7 @@ export interface RunnerProps {
 
 const TERMINAL = new Set(["completed", "timed_out"]);
 
-export function InterviewRunner({ brandName, session, questions, identity, api, attemptsLeft = 0, onExit, onAgain }: RunnerProps) {
+export function InterviewRunner({ brandName, session, questions, identity, api, audio = null, attemptsLeft = 0, onExit, onAgain }: RunnerProps) {
   const previewMode = !api;
   const config: MachineConfig = useMemo(
     () => ({ introSteps: session.config.introSteps, allowEarlySubmit: session.config.allowEarlySubmit, transitionMs: 1200 }),
@@ -72,6 +76,7 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
   const firstOpen = questions.findIndex((q) => !TERMINAL.has(q.state));
   const alreadyStarted = questions.some((q) => q.state !== "pending");
   const [needsResume, setNeedsResume] = useState(alreadyStarted);
+  const needsResumeRef = useRef(alreadyStarted);
   const [attemptsAfter, setAttemptsAfter] = useState(attemptsLeft);
 
   const stateRef = useRef<MachineState>(initialState(questions));
@@ -85,6 +90,19 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
   const level = useMicLevel(media.stream);
   const speech = useSpeech(session.config.ttsDefault, session.config.ttsRate);
   const cueCtx = useRef<AudioContext | null>(null);
+
+  // --- Audio answers (consent only) -------------------------------------------
+  const recordConsent = !!audio;
+  const format = useMemo(() => (recordConsent ? pickAudioFormat() : null), [recordConsent]);
+  const recorder = useRef<AnswerRecorder | null>(null);
+  const [recState, setRecState] = useState<"off" | "recording" | "error">("off");
+  const [recError, setRecError] = useState<string | null>(null);
+  const [uploads, setUploads] = useState<UploadStatus[]>([]);
+  const uploadQueue = useMemo(() => (audio ? new AudioUploadQueue(session.id, audio, setUploads) : null), [audio, session.id]);
+  useEffect(() => {
+    void uploadQueue?.restore();
+    return () => uploadQueue?.dispose();
+  }, [uploadQueue]);
   const wakeLock = useRef<WakeLockSentinel | null>(null);
 
   const queue = useMemo(
@@ -95,12 +113,24 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
     [api],
   );
 
+  const stopRecording = useCallback(() => {
+    const r = recorder.current;
+    recorder.current = null;
+    if (!r) return;
+    setRecState("off");
+    void r.stop().then((answer) => {
+      if (answer.error) setRecError(answer.error);
+      void uploadQueue?.add(answer);
+    }).catch(() => {});
+  }, [uploadQueue]);
+
   const releaseDevices = useCallback(() => {
+    stopRecording();
     media.stop();
     speech.cancel();
     void wakeLock.current?.release().catch(() => {});
     wakeLock.current = null;
-  }, [media, speech]);
+  }, [media, speech, stopRecording]);
 
   const finalize = useCallback(async () => {
     releaseDevices();
@@ -115,6 +145,7 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
     try {
       await queue.drained();
       const res = await api.complete();
+      if (uploadQueue) await Promise.race([uploadQueue.drained(), new Promise((r) => setTimeout(r, 60_000))]);
       setAttemptsAfter(res.attemptsLeft);
       setCompletion({ ...base, durationSeconds: res.durationSeconds ?? base.durationSeconds, saved: "saved" });
     } catch {
@@ -152,6 +183,29 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
     if (inQuestions) dispatch({ type: "TICK", now });
   }, [now, inQuestions, dispatch]);
 
+  // Record exactly the answer stage of each question: start when it begins, stop when
+  // the answer is submitted or its time runs out. Preparation is never recorded.
+  const answeringIndex = state.phase === "question" && state.stage === "answering" ? state.index : null;
+  useEffect(() => {
+    const current = recorder.current;
+    if (current && current.position !== answeringIndex) stopRecording();
+    if (answeringIndex == null || recorder.current || !recordConsent || !format || !media.stream) return;
+    if (uploads.some((u) => u.position === answeringIndex && u.state !== "failed")) return; // already captured
+    const q = questions[answeringIndex];
+    // Resumed after a refresh part-way through this answer: record the rest, marked partial.
+    const partial = q.answerStartedAt != null && Date.now() - q.answerStartedAt > 2000 && needsResumeRef.current;
+    try {
+      const r = new AnswerRecorder(answeringIndex, partial);
+      r.start(media.stream, format);
+      recorder.current = r;
+      setRecState("recording");
+      setRecError(null);
+    } catch (e) {
+      setRecState("error");
+      setRecError(e instanceof Error ? e.message : "Recording could not start.");
+    }
+  }, [answeringIndex, recordConsent, format, media.stream, questions, stopRecording, uploads]);
+
   // Keep the screen awake and warn before leaving mid-interview.
   useEffect(() => {
     if (!inQuestions) return;
@@ -184,6 +238,7 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
     stateRef.current = s;
     setState(s);
     setNeedsResume(false);
+    window.setTimeout(() => { needsResumeRef.current = false; }, 5000);
     runEffects(effectsOf(questions, prev, s));
   }
 
@@ -204,6 +259,7 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
         onDone={() => { releaseDevices(); onExit(); }}
         onAgain={onAgain && attemptsAfter > 0 ? () => { releaseDevices(); onAgain(); } : undefined}
         onRetrySave={() => void finalize()}
+        audio={recordConsent ? { uploads, total: questions.length, onRetry: () => uploadQueue?.retryFailed() } : null}
       />
     );
   }
@@ -254,6 +310,7 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
           identity={identity}
           media={{ stream: media.stream, status: media.status, error: media.error, level, request: () => void media.request() }}
           speech={speech}
+          recording={recordConsent}
           onBack={() => dispatch({ type: "INTRO_BACK" })}
           onNext={() => (isLast ? begin({ type: "INTRO_NEXT", now: Date.now() }) : dispatch({ type: "INTRO_NEXT", now: Date.now() }))}
         />
@@ -307,9 +364,20 @@ export function InterviewRunner({ brandName, session, questions, identity, api, 
             <CameraPreview stream={media.stream} className="w-20 sm:w-28 aspect-video shrink-0 rounded-xl" />
           ) : null}
           <div className="flex flex-col gap-1.5 min-w-0">
-            <div className={cx("inline-flex w-fit items-center gap-2 rounded-full px-2.5 py-1", micOn ? (state.stage === "answering" ? "bg-ok-soft" : "bg-surface-2") : "bg-danger-soft")}>
-              {micOn ? <Mic className={cx("size-3.5", state.stage === "answering" ? "text-ok" : "text-ink-2")} /> : <MicOff className="size-3.5 text-danger" />}
-              <MicMeter level={level} active={micOn} compact />
+            <div className="flex flex-wrap items-center gap-2">
+              <div className={cx("inline-flex w-fit items-center gap-2 rounded-full px-2.5 py-1", micOn ? (state.stage === "answering" ? "bg-ok-soft" : "bg-surface-2") : "bg-danger-soft")}>
+                {micOn ? <Mic className={cx("size-3.5", state.stage === "answering" ? "text-ok" : "text-ink-2")} /> : <MicOff className="size-3.5 text-danger" />}
+                <MicMeter level={level} active={micOn} compact />
+              </div>
+              {recState === "recording" && (
+                <span role="status" className="inline-flex items-center gap-1.5 rounded-full bg-danger-soft px-2.5 py-1 text-xs font-medium text-danger">
+                  <span aria-hidden className="h-2 w-2 rounded-full bg-danger animate-pulse" /> Recording answer
+                </span>
+              )}
+              {recordConsent && recState !== "recording" && state.stage === "preparing" && <span className="text-xs text-muted">Recording starts with the answer timer</span>}
+              {!recordConsent && <span className="text-xs text-muted">Not recorded</span>}
+              {recordConsent && !micOn && state.stage === "answering" && <span role="alert" className="text-xs text-warn">Microphone off: this answer is not recorded</span>}
+              {recError && <span role="alert" className="text-xs text-warn">{recError}</span>}
             </div>
             <div className="flex gap-3 text-xs">
               {speech.supported && (

@@ -33,12 +33,15 @@ export default function Settings() {
           <Section title="Interviewer voice" icon={Volume2} description="The browser voice that can read questions aloud.">
             <Field label="Speaking rate" hint="0.7 (slow) – 1.3 (fast)." className="sm:max-w-xs"><Input name="tts_rate" type="number" step="0.05" min={0.7} max={1.3} defaultValue={Number(s.tts_rate ?? 0.95)} /></Field>
           </Section>
-          <Section title="Data retention" icon={Archive} description="How long student documents are kept.">
-            <Field label="Delete student documents after (days)" className="sm:max-w-xs"><Input name="document_retention_days" type="number" min={30} max={3650} defaultValue={Number(s.document_retention_days ?? 365)} /></Field>
+          <Section title="Data retention" icon={Archive} description="How long student documents and recorded answers are kept.">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Delete student documents after (days)"><Input name="document_retention_days" type="number" min={30} max={3650} defaultValue={Number(s.document_retention_days ?? 365)} /></Field>
+              <Field label="Delete answer recordings after (days)" hint="Includes their transcripts and analysis."><Input name="audio_retention_days" type="number" min={7} max={3650} defaultValue={Number(s.audio_retention_days ?? 365)} /></Field>
+            </div>
           </Section>
           <div><Button type="submit" disabled={busy}><Save /> Save settings</Button></div>
         </form>
-        <Section title="Run retention cleanup" icon={Trash2} description="Permanently deletes CVs, passports and course documents older than the retention period.">
+        <Section title="Run retention cleanup" icon={Trash2} description="Permanently deletes student CVs, and answer recordings with their transcripts and analysis, older than their retention periods.">
           <Button variant="danger" disabled={busy} onClick={() => window.confirm("Permanently delete documents older than the retention period?") && void run(runRetention)}><Trash2 /> Run now</Button>
         </Section>
         <Section title="Appearance" icon={Palette} description="Light, dark or follow this device. Saved per browser.">

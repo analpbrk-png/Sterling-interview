@@ -22,6 +22,8 @@ export interface IntroProps {
   speech: { supported: boolean; enabled: boolean; setEnabled: (v: boolean) => void };
   onNext: () => void;
   onBack: () => void;
+  /** True when the student agreed to audio recording of answers. */
+  recording?: boolean;
 }
 
 function Shell({ title, eyebrow, children, footer, icon: Icon }: { title: string; eyebrow: string; children: React.ReactNode; footer: React.ReactNode; icon?: LucideIcon }) {
@@ -67,7 +69,7 @@ export function IntroScreen(p: IntroProps) {
           </Card>
           <p>{p.prepSummary} When the answer timer starts, speak your answer out loud as if the interviewer were listening.</p>
           <ul className="grid gap-3 sm:grid-cols-3">
-            {([[Lightbulb, "Find a quiet, well-lit place and keep this tab open."], [ShieldCheck, "Camera and microphone are used live on your device only. Nothing is recorded or stored."], [BadgeCheck, "This is practice, not an official interview. Nothing is assessed or scored."]] as const).map(([I, t]) => (
+            {([[Lightbulb, "Find a quiet, well-lit place and keep this tab open."], [ShieldCheck, p.recording ? "Only the audio of your answers is recorded, while each answer timer runs. Your camera is never recorded." : "Camera and microphone are used live on your device only. Nothing is recorded or stored."], [BadgeCheck, p.recording ? "This is practice, not an official interview. Any feedback comes later from your adviser." : "This is practice, not an official interview. Nothing is assessed or scored."]] as const).map(([I, t]) => (
               <li key={t} className="rounded-2xl border border-line bg-surface p-4 text-sm"><I aria-hidden className="size-5 text-accent-fg mb-2" strokeWidth={1.8} />{t}</li>
             ))}
           </ul>
@@ -77,7 +79,7 @@ export function IntroScreen(p: IntroProps) {
           {p.generationNotice && <Notice tone="warn">{p.generationNotice}</Notice>}
           {p.config.includesSensitive && (
             <Notice tone="neutral" title="About some questions">
-              This practice set may include questions that real interviews sometimes ask about visa history, dependants or health. Answer only what you are comfortable saying aloud; nothing is recorded.
+              This practice set may include questions that real interviews sometimes ask about visa history, dependants or health. Answer only what you are comfortable saying aloud{p.recording ? "" : "; nothing is recorded"}.
             </Notice>
           )}
         </div>
@@ -109,7 +111,7 @@ export function IntroScreen(p: IntroProps) {
             </div>
             {ready && <p className="text-sm text-muted">Say a few words. The bars should move when you speak.</p>}
             {p.media.error && <Notice tone="danger">{p.media.error}</Notice>}
-            <p className="text-xs text-muted">We only show a live preview. No video, audio or snapshots are captured, saved or uploaded.</p>
+            <p className="text-xs text-muted">{p.recording ? "Your camera is a live preview only and is never recorded. The microphone is needed to record your answers." : "We only show a live preview. No video, audio or snapshots are captured, saved or uploaded."}</p>
           </div>
         </div>
       </Shell>
@@ -150,7 +152,7 @@ export function IntroScreen(p: IntroProps) {
             <MicMeter level={p.media.level} active={!!p.media.stream?.getAudioTracks().length} />
             <CameraPreview stream={p.media.stream} className="w-36 aspect-video" />
           </div>
-          <p className="text-xs text-muted">Pronunciation practice only. Your voice is not analysed or stored.</p>
+          <p className="text-xs text-muted">Pronunciation practice only. This step is not recorded.</p>
         </div>
       </Shell>
     );

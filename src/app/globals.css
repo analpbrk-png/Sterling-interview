@@ -187,3 +187,16 @@ select.app-select {
   padding-right: 2.25rem;
 }
 input[type="file"]::file-selector-button { font: inherit; }
+
+/* Admin sidebar. State lives on <html data-sidebar>, set before first paint (app/layout.tsx). */
+.admin-aside { width: 264px; transition: width 280ms cubic-bezier(.2,.7,.2,1); overflow: hidden; }
+.admin-aside .sb-label { transition: opacity 180ms ease; }
+:root[data-sidebar="collapsed"] .admin-aside { width: 76px; }
+:root[data-sidebar="collapsed"] .admin-aside .sb-label { display: none; }
+:root[data-sidebar="collapsed"] .admin-aside .sb-item { justify-content: center; padding-inline: 0; }
+:root[data-sidebar="collapsed"] .admin-aside .sb-head { flex-direction: column; justify-content: center; height: auto; padding: 14px 0 12px; gap: 10px; }
+:root[data-sidebar="collapsed"] .admin-aside .sb-toggle { margin-left: 0; }
+:root[data-sidebar="collapsed"] .admin-aside .sb-logo { width: 44px; }
+:root[data-sidebar="collapsed"] .admin-aside .sb-logo img { width: 124px !important; }
+:root[data-sidebar="collapsed"] .admin-aside .sb-user { flex-direction: column; }
+:root[data-sidebar="collapsed"] .admin-aside .brand-rule { margin-inline: 16px; }

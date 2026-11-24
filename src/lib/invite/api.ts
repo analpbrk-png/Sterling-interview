@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { redactPersonalData, type ResumeContext } from "@/lib/ai/context";
 import { extractTextInBrowser } from "@/lib/documents/extract";
 import type { ProgressItem } from "@/lib/interview/progress-queue";
+import type { AudioUploadApi } from "@/lib/interview/audio-uploads";
 
 /** The link token lives in the URL fragment (#...), which browsers never send to any server. */
 export function readTokenFromLocation(): string | null {
@@ -69,10 +70,29 @@ export interface OpenResult {
     resumeStatus: "none" | "draft" | "confirmed";
     resumeExtractionMode: string | null;
     attemptsLeft: number;
+    /** null until the student has chosen. */
+    audioConsent: boolean | null;
   };
   session: ServerSession | null;
   lastSession: { status: string; completed_at: string | null; duration_seconds: number | null; question_count: number } | null;
   serverNow: number;
+}
+
+/** Marks errors that a retry cannot fix (rejected by the server), so uploads stop retrying. */
+function permanent(e: unknown) {
+  if (e instanceof InviteError && !e.retryable && e.code !== "not_ready") (e as InviteError & { permanent?: boolean }).permanent = true;
+  return e;
+}
+
+export function audioUploadApi(token: string, sessionId: string): AudioUploadApi {
+  return {
+    begin: (meta) => call<{ recordingId: string; alreadyUploaded?: boolean; path?: string; uploadToken?: string; bucket?: string }>({ action: "audio_begin", token, sessionId, ...meta }).catch((e) => { throw permanent(e); }),
+    async put(bucket, path, uploadToken, blob, contentType) {
+      const { error } = await createClient().storage.from(bucket).uploadToSignedUrl(path, uploadToken, blob, { contentType, upsert: true });
+      if (error) throw new InviteError(`Audio upload failed: ${error.message}`, "upload", true);
+    },
+    finish: (position, recordingId) => call<{ ok: boolean }>({ action: "audio_finish", token, sessionId, position, recordingId }).then(() => undefined).catch((e) => { throw permanent(e); }),
+  };
 }
 
 export function inviteApi(token: string) {
@@ -96,6 +116,7 @@ export function inviteApi(token: string) {
       if (!res.ok) console.warn("[interview] transition not accepted:", res.reason);
     },
     complete: (sessionId: string) => call<{ ok: boolean; duration_seconds?: number; attemptsLeft: number; reason?: string }>({ action: "complete", token, sessionId }),
+    consent: (granted: boolean) => call<{ ok: boolean; granted: boolean }>({ action: "consent", token, granted }),
     abandon: (sessionId: string) => call<{ ok: boolean }>({ action: "abandon", token, sessionId }),
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Ban, Copy, Eye, ListOrdered, MoreHorizontal, RefreshCw, RotateCcw } from "lucide-react";
+import { Ban, BarChart3, Copy, Eye, ListOrdered, MoreHorizontal, RefreshCw, RotateCcw } from "lucide-react";
 import { Button, cx } from "@/components/ui";
 import { allowRetry, copyToClipboard, getInvitationLink, regenerateInvitation, revokeInvitation } from "@/lib/admin/ops";
 import type { ProgressRow } from "@/lib/admin/progress";
@@ -68,6 +68,7 @@ export function RowActions({ row, run, busy, compact = false }: { row: ProgressR
         <div role="menu" className={cx("absolute right-0 z-20", up ? "bottom-11" : "top-11")} ><div className="w-56 rounded-xl border border-line bg-surface p-1.5 shadow-[var(--shadow-pop)] animate-fade">
           <Link role="menuitem" className={item} href={`/admin/invitations/view/?id=${row.id}`}><Eye /> View progress</Link>
           <Link role="menuitem" className={item} href={`/admin/invitations/view/?id=${row.id}#questions`}><ListOrdered /> View questions</Link>
+          <Link role="menuitem" className={item} href={`/admin/invitations/analysis/?id=${row.id}`}><BarChart3 /> Interview analysis</Link>
           <div className="my-1 h-px bg-line" />
           <button role="menuitem" type="button" className={item} disabled={busy} onClick={pick(a.regenerate)}><RefreshCw /> Regenerate link</button>
           <button role="menuitem" type="button" className={item} disabled={busy || retryDisabled} onClick={pick(a.retry)}><RotateCcw /> Allow retry</button>

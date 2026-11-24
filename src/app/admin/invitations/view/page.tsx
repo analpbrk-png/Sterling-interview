@@ -11,7 +11,8 @@ import { percent, stageLabel, STATUS_INFO, useLiveChanges, type ProgressRow } fr
 import { LinkActions } from "@/components/admin/link-actions";
 import { PersonalisePanel } from "@/components/admin/personalise-panel";
 import { useAuth } from "@/components/auth-provider";
-import { Badge, Button, Card, FlashBar, LoadError, Loading, PageHeader, ProgressBar } from "@/components/ui";
+import { Badge, Button, Card, FlashBar, LinkButton, LoadError, Loading, PageHeader, ProgressBar } from "@/components/ui";
+import { BarChart3 } from "lucide-react";
 import { formatDate, formatDuration, STATUS_LABEL } from "@/lib/format";
 
 const Q_STATE: Record<string, { label: string; tone: "neutral" | "accent" | "ok" | "warn" }> = {
@@ -41,14 +42,16 @@ export default function InvitationRecord() {
     ]);
     const list = must(sessions);
     const latest = list[0];
-    const questions = latest ? must(await s.from("interview_session_questions").select("position, question_text, origin, category_id, prep_seconds, answer_seconds, submission_mode, state, presented_at, answer_started_at, completed_at, completion_method").eq("session_id", latest.id).order("position")) : [];
-    return { row, inv: must(inv), sessions: list, docs: must(docs), questions };
+    const questions = latest ? must(await s.from("interview_session_questions").select("id, position, question_text, origin, category_id, prep_seconds, answer_seconds, submission_mode, state, presented_at, answer_started_at, completed_at, completion_method").eq("session_id", latest.id).order("position")) : [];
+    const recs = latest ? must(await s.from("interview_answer_recordings").select("session_question_id, upload_status, recorded_duration_ms, speech_duration_ms, speech_is_estimate").eq("session_id", latest.id)) : [];
+    return { row, inv: must(inv), sessions: list, docs: must(docs), questions, recs };
   }, [id]);
   useLiveChanges(() => void reload());
 
   if (id === undefined || (loading && !data)) return <Loading />;
   if (error || !data) return <LoadError error={error ?? "Interview not found."} />;
-  const { row, sessions, docs, questions } = data;
+  const { row, sessions, docs, questions, recs } = data;
+  const recByQ = new Map(recs.map((r) => [r.session_question_id, r]));
   const info = STATUS_INFO[row.status];
 
   const openDoc = (path: string) => void run(async () => {
@@ -72,7 +75,10 @@ export default function InvitationRecord() {
             </div>
             <p className="mt-4 font-display text-4xl font-semibold tabular-nums">{row.completed_questions} <span className="text-lg text-muted font-normal">of {row.total_questions || "—"} questions</span></p>
             <ProgressBar className="mt-3 h-2" value={percent(row)} tone={row.status === "completed" ? "ok" : "accent"} label="Interview progress" />
-            <p className="mt-1 text-sm text-muted">{percent(row)}% complete</p>
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted">{percent(row)}% complete</p>
+              <LinkButton size="sm" href={`/admin/invitations/analysis/?id=${row.id}`}><BarChart3 /> Interview analysis</LinkButton>
+            </div>
           </Card>
 
           <PersonalisePanel
@@ -93,7 +99,13 @@ export default function InvitationRecord() {
                   <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
                     <Badge tone={Q_STATE[q.state]?.tone ?? "neutral"}>{Q_STATE[q.state]?.label ?? q.state}</Badge>
                     <Badge>{q.origin === "ai_generated" ? "AI personalised" : q.origin}</Badge>
-                    <Badge>{q.prep_seconds}s / {q.answer_seconds}s · {q.submission_mode}</Badge>
+                    <Badge>Allowed: {q.prep_seconds}s prep / {q.answer_seconds}s answer · {q.submission_mode}</Badge>
+                    {(() => {
+                      const r = recByQ.get(q.id);
+                      if (!r) return q.state === "completed" || q.state === "timed_out" ? <Badge>Not recorded</Badge> : null;
+                      if (r.upload_status !== "uploaded") return <Badge tone="warn">Recording {r.upload_status}</Badge>;
+                      return <Badge tone="gold">Spoke {r.speech_duration_ms != null ? `${(r.speech_duration_ms / 1000).toFixed(1)}s${r.speech_is_estimate ? " (est.)" : ""}` : "—"} of {((r.recorded_duration_ms ?? 0) / 1000).toFixed(1)}s recorded</Badge>;
+                    })()}
                     {q.completion_method && <Badge>{q.completion_method === "early" ? "finished early" : q.completion_method}</Badge>}
                     {q.completed_at && <span className="text-xs text-muted">{formatDate(q.completed_at)}</span>}
                   </div>

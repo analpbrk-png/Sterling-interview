@@ -1,6 +1,7 @@
 "use client";
-import { Check, Clock3, GraduationCap, ListChecks, School } from "lucide-react";
-import { Button, Card, Notice } from "@/components/ui";
+import { Check, Clock3, GraduationCap, ListChecks, Mic, School } from "lucide-react";
+import type { UploadStatus } from "@/lib/interview/audio-uploads";
+import { Button, Card, Notice, ProgressBar } from "@/components/ui";
 import { SterlingLogo } from "@/components/brand-mark";
 import { formatDuration } from "@/lib/format";
 
@@ -12,13 +13,14 @@ export interface CompletionData {
 }
 
 /** Summary only. No scores or feedback: answers were never captured or analysed. */
-export function Completion({ data, universityName, courseName, onDone, onAgain, onRetrySave }: {
+export function Completion({ data, universityName, courseName, onDone, onAgain, onRetrySave, audio }: {
   data: CompletionData;
   universityName: string;
   courseName: string;
   onDone: () => void;
   onAgain?: () => void;
   onRetrySave: () => void;
+  audio?: { uploads: UploadStatus[]; total: number; onRetry: () => void } | null;
 }) {
   const full = data.questionsCompleted === data.questionCount;
   const stats = [
@@ -54,7 +56,10 @@ export function Completion({ data, universityName, courseName, onDone, onAgain, 
               ))}
             </div>
 
-            <p className="mt-5 text-xs text-muted">Your camera and microphone have been turned off. Nothing was recorded. Your adviser can see that you completed the interview.</p>
+            {audio ? <AudioSaveStatus {...audio} /> : null}
+            <p className="mt-5 text-xs text-muted">
+              Your camera and microphone have been turned off. {audio ? "Only your spoken answers were recorded (audio only, no video) and are available to your adviser." : "Nothing was recorded."} Your adviser can see that you completed the interview.
+            </p>
             {data.saved === "saving" && <p className="mt-3 text-xs text-muted">Saving session summary…</p>}
             {data.saved === "preview" && <div className="mt-4 text-left"><Notice tone="warn">Preview mode: nothing was saved.</Notice></div>}
             {data.saved === "failed" && (
@@ -64,12 +69,36 @@ export function Completion({ data, universityName, courseName, onDone, onAgain, 
               </div>
             )}
             <div className="mt-7 flex flex-col sm:flex-row gap-3 justify-center">
-              <Button size="lg" className="sm:min-w-40" onClick={onDone}>Done</Button>
+              <Button size="lg" className="sm:min-w-40" onClick={() => {
+                if (audio && audio.uploads.some((u) => u.state === "queued" || u.state === "uploading") && !window.confirm("Some recorded answers are still saving. Leave now? They will be saved the next time you open your link on this device.")) return;
+                onDone();
+              }}>Done</Button>
               {onAgain && <Button size="lg" variant="secondary" onClick={onAgain}>Practice again</Button>}
             </div>
           </div>
         </Card>
       </main>
+    </div>
+  );
+}
+
+function AudioSaveStatus({ uploads, onRetry }: { uploads: UploadStatus[]; total: number; onRetry: () => void }) {
+  const saved = uploads.filter((u) => u.state === "saved").length;
+  const busy = uploads.filter((u) => u.state === "queued" || u.state === "uploading").length;
+  const failed = uploads.filter((u) => u.state === "failed");
+  return (
+    <div className="mt-4 rounded-2xl border border-line p-4 text-left text-sm" role="status" aria-live="polite">
+      <div className="flex items-center gap-2 font-medium">
+        <Mic aria-hidden className="size-4 text-accent-fg" />
+        {busy ? <>Saving recorded answers… {saved} of {uploads.length} saved</> : failed.length ? <>{saved} of {uploads.length} recorded answers saved</> : uploads.length ? <>All {saved} recorded answers saved</> : <>No answers were recorded</>}
+      </div>
+      {busy > 0 && <ProgressBar className="mt-3" value={uploads.length ? (saved / uploads.length) * 100 : 0} label="Saving recordings" />}
+      {failed.length > 0 && (
+        <div className="mt-3 grid gap-2">
+          <p className="text-xs text-warn">{failed.length} recording{failed.length === 1 ? "" : "s"} could not be saved yet{failed[0].error ? ` (${failed[0].error})` : ""}.</p>
+          <Button size="sm" variant="secondary" onClick={onRetry}>Try saving again</Button>
+        </div>
+      )}
     </div>
   );
 }

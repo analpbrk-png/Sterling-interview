@@ -2,12 +2,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { brand, DISCLAIMER } from "@/config/brand";
 import { SterlingLogo } from "@/components/brand-mark";
-import { ArrowRight, BookUser, CheckCircle2, ClipboardCheck, FileText, IdCard, Link2Off, Mic, Sparkles, UploadCloud, type LucideIcon } from "lucide-react";
+import { ArrowRight, ShieldCheck, BookUser, CheckCircle2, ClipboardCheck, FileText, IdCard, Link2Off, Mic, Sparkles, UploadCloud, type LucideIcon } from "lucide-react";
 import { Badge, Button, Card, Field, IconTile, Input, Notice, Spinner, Textarea, cx } from "@/components/ui";
 import { InterviewRunner, type RunnerApi, type RunnerQuestion } from "@/components/interview/interview-runner";
 import { parseSessionConfig } from "@/lib/interview/config";
 import { sanitiseResumeContext, type ResumeContext } from "@/lib/ai/context";
-import { inviteApi, InviteError, readTokenFromLocation, type OpenResult, type ServerSession } from "@/lib/invite/api";
+import { audioUploadApi, inviteApi, InviteError, readTokenFromLocation, type OpenResult, type ServerSession } from "@/lib/invite/api";
 
 type Step = "loading" | "invalid" | "welcome" | "cv" | "preparing" | "interview" | "finished" | "exited";
 
@@ -70,6 +70,9 @@ export function InviteFlow() {
   const [lastSession, setLastSession] = useState<OpenResult["lastSession"]>(null);
   const [session, setSession] = useState<{ data: ServerSession; questions: RunnerQuestion[] } | null>(null);
   const api = useMemo(() => (token ? inviteApi(token) : null), [token]);
+  const [consent, setConsent] = useState<boolean | null>(null);
+  const [savingConsent, setSavingConsent] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
 
   const load = useCallback(async (t: string) => {
     setStep("loading");
@@ -77,6 +80,7 @@ export function InviteFlow() {
       const res = await inviteApi(t).open();
       const receivedAt = Date.now();
       setInfo(res.invitation);
+      setConsent(res.invitation.audioConsent ?? null);
       setLastSession(res.lastSession);
       if (res.session) {
         setSession({ data: res.session, questions: toRunnerQuestions(res.session, res.serverNow, receivedAt) });
@@ -169,6 +173,7 @@ export function InviteFlow() {
         questions={session.questions}
         identity={{ fullName: info.studentName, studentId: info.studentId }}
         api={runnerApi}
+        audio={info.audioConsent === true && token ? audioUploadApi(token, session.data.id) : null}
         attemptsLeft={info.attemptsLeft}
         onExit={() => setStep("exited")}
         onAgain={() => { setSession(null); void start(); }}
@@ -183,7 +188,7 @@ export function InviteFlow() {
           <p className="mt-2 text-muted">
             {step === "finished"
               ? `You have completed your mock interview for ${info.courseName} at ${info.universityName}. Your adviser can see your progress.`
-              : "Your camera and microphone are off. Nothing was recorded."}
+              : info.audioConsent ? "Your camera and microphone are off. Only the audio of your answers was recorded." : "Your camera and microphone are off. Nothing was recorded."}
           </p>
         </StatusCard>
       </Frame>
@@ -194,6 +199,20 @@ export function InviteFlow() {
 
   if (step === "welcome") {
     const first = info.studentName.split(" ")[0];
+    const saveConsentAndContinue = async () => {
+      if (!api || consent === null) return;
+      setSavingConsent(true);
+      setConsentError(null);
+      try {
+        await api.consent(consent);
+        setInfo({ ...info, audioConsent: consent });
+        setStep("cv");
+      } catch (e) {
+        setConsentError(e instanceof Error ? e.message : "Could not save your choice. Please try again.");
+      } finally {
+        setSavingConsent(false);
+      }
+    };
     return (
       <Frame step={1}>
         <div className="pt-4 sm:pt-10 grid gap-7 animate-rise">
@@ -214,7 +233,7 @@ export function InviteFlow() {
             </div>
           </Card>
           <ol className="grid gap-3 sm:grid-cols-2">
-            {([[FileText, "Check your CV details", "so your questions fit your background."], [Mic, "Allow camera and microphone", "used live only, never recorded."], [IdCard, "Practise your introduction", "passport, full name and student ID."], [ClipboardCheck, "Answer out loud", "when each answer timer starts."]] as const).map(([I, t, d], i) => (
+            {([[FileText, "Check your CV details", "so your questions fit your background."], [Mic, "Allow camera and microphone", "camera is never recorded."], [IdCard, "Practise your introduction", "passport, full name and student ID."], [ClipboardCheck, "Answer out loud", "when each answer timer starts."]] as const).map(([I, t, d], i) => (
               <li key={t} className="flex gap-3 rounded-2xl border border-line bg-surface p-4">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-fg"><I className="size-[18px]" strokeWidth={1.8} /></span>
                 <span className="text-sm"><span className="block font-medium text-ink">{i + 1}. {t}</span><span className="text-muted">{d}</span></span>
@@ -222,9 +241,13 @@ export function InviteFlow() {
             ))}
           </ol>
           {lastSession?.status === "completed" && <Notice tone="ok">You have completed this interview before. You have {info.attemptsLeft} attempt{info.attemptsLeft === 1 ? "" : "s"} left.</Notice>}
+          <ConsentCard value={consent} onChange={setConsent} />
+          {consentError && <Notice tone="danger">{consentError}</Notice>}
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-            <Button size="lg" className="sm:min-w-56" onClick={() => setStep("cv")}>Start interview <ArrowRight /></Button>
-            <p className="text-xs text-muted">No account needed. Nothing is recorded.</p>
+            <Button size="lg" className="sm:min-w-56" disabled={consent === null || savingConsent} onClick={() => void saveConsentAndContinue()}>
+              {savingConsent ? <><Spinner /> Please wait…</> : <>Start interview <ArrowRight /></>}
+            </Button>
+            <p className="text-xs text-muted">{consent === null ? "Choose a recording option above to continue." : consent ? "Audio of your answers will be recorded. No video." : "Practice only: nothing will be recorded."}</p>
           </div>
         </div>
       </Frame>
@@ -330,7 +353,7 @@ function CvStep({ info, api, error, onUpdated, onStart }: {
         <div className="flex flex-col sm:flex-row gap-3">
           <Button size="lg" type="submit" disabled={busy}>{busy ? <><Spinner /> Please wait…</> : <>Continue to camera check <ArrowRight /></>}</Button>
         </div>
-        <p className="text-xs text-muted">Next we prepare all your questions, then check your camera and microphone. Nothing is recorded.</p>
+        <p className="text-xs text-muted">Next we prepare all your questions, then check your camera and microphone. {info.audioConsent ? "Only your spoken answers will be recorded." : "Nothing is recorded."}</p>
       </form>
     </div>
   );
@@ -347,5 +370,35 @@ function Waiting({ text, sub }: { text: string; sub?: string }) {
       <p className="mt-6 font-display text-lg font-semibold">{text}</p>
       {sub && <p className="mt-1 text-sm text-muted">{sub}</p>}
     </div>
+  );
+}
+
+/** Explicit, informed choice before anything is recorded. */
+function ConsentCard({ value, onChange }: { value: boolean | null; onChange: (v: boolean) => void }) {
+  const opt = (v: boolean, title: string, text: string) => (
+    <label className={cx("flex gap-3 rounded-2xl border p-4 cursor-pointer transition", value === v ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-line-strong")}>
+      <input type="radio" name="audio_consent" className="mt-1 h-4 w-4 accent-[var(--accent)]" checked={value === v} onChange={() => onChange(v)} />
+      <span className="text-sm"><span className="block font-medium text-ink">{title}</span><span className="text-muted">{text}</span></span>
+    </label>
+  );
+  return (
+    <Card className="p-5 sm:p-6 grid gap-4">
+      <div className="flex items-start gap-3">
+        <IconTile icon={ShieldCheck} tone="accent" size="sm" />
+        <div>
+          <p className="font-display font-semibold text-[17px]">Recording and privacy</p>
+          <p className="mt-1 text-sm text-muted">Please choose before you start.</p>
+        </div>
+      </div>
+      <ul className="grid gap-2 text-sm text-ink-2">
+        <li>• If you agree, the <strong>audio of your spoken answers</strong> is recorded, one recording per question, only while the answer timer runs. Preparation time, the passport practice and your camera are <strong>never recorded</strong>.</li>
+        <li>• Recordings are stored privately and are available only to your authorised advisers, who may transcribe and review them with AI to give you practice feedback.</li>
+        <li>• Recordings are deleted after the retention period set by your adviser. You will not see scores or feedback during the interview.</li>
+      </ul>
+      <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Recording choice">
+        {opt(true, "Record my spoken answers", "Your adviser can listen and give feedback.")}
+        {opt(false, "Practise without recording", "Nothing is recorded. Audio playback and analysis will not be available.")}
+      </div>
+    </Card>
   );
 }
